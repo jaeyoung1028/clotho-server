@@ -1,0 +1,36 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // .env 파일에 있는 비밀번호를 가져다 씁니다
+  url      = env("DATABASE_URL")
+}
+
+// 1. 타로 카드 정보 테이블 (78장 데이터)
+model TarotCard {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique // 카드 이름 (예: The Fool)
+  number       Int      // 카드 번호 (0~77)
+  image        String   // 카드 이미지 URL
+  meaningUp    String   // 정방향 해석
+  meaningDown  String   // 역방향 해석
+  
+  // 관계 설정: 이 카드가 뽑힌 기록들
+  draws        DrawResult[]
+}
+
+// 2. 사용자가 카드를 뽑은 기록 테이블
+model DrawResult {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now()) // 언제 뽑았는지
+  userText  String   // 사용자의 고민 내용
+  aiAnswer  String   // AI가 해준 답변
+  
+  // 어떤 카드를 뽑았는지 연결
+  cardId    Int
+  card      TarotCard @relation(fields: [cardId], references: [id])
+}
