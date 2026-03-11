@@ -9,7 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@prisma/client": "^6.15.0",
+    "@ai-sdk/google": "^2.0.44",
+    "@google/generative-ai": "^0.24.1",
+    "@prisma/client": "^6.19.2",
+    "ai": "^5.0.108",
     "next": "16.0.6",
     "prisma": "^6.15.0",
     "react": "19.2.0",

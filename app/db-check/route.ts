@@ -13,7 +13,7 @@ export async function GET() {
       status: '✅ 연결 성공 (Connected)', 
       databaseTime: result 
     });
-    //
+    //  
   } catch (error) {
     return NextResponse.json({ 
       status: '❌ 연결 실패 (Error)', 
