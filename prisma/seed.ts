@@ -93,7 +93,7 @@ const tarotData = [
 ];
 
 async function main() {
-  console.log('🌱 타로 카드 데이터 넣는 중...')
+  console.log('🌱 타로 카드 데이터(78장) 넣는 중...')
   
   // 기존 데이터가 있다면 중복 방지를 위해 삭제 (선택사항)
   // await prisma.tarotCard.deleteMany() 
@@ -102,7 +102,13 @@ async function main() {
     // number가 겹치면 업데이트, 없으면 생성 (upsert)
     await prisma.tarotCard.upsert({
       where: { number: card.number },
-      update: {},
+      // 👇 여기가 핵심입니다! 기존에 있던 데이터도 새 내용으로 강제 덮어쓰기!
+      update: {
+        name: card.name,
+        nameKo: card.nameKo,
+        meaningUp: card.meaningUp,
+        imageUrl: card.imageUrl,
+      },
       create: {
         number: card.number,
         name: card.name,
@@ -113,7 +119,7 @@ async function main() {
       },
     })
   }
-  console.log('✅ 메이저 아르카나 22장 DB 입력 완료npx prisma studio!')
+  console.log('✅ 타로 카드 78장 DB 입력/업데이트 완벽 성공!')
 }
 
 main()
