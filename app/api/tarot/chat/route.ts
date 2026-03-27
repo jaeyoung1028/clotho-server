@@ -24,8 +24,8 @@ export async function POST(req: Request) {
     const currentUserId = testUser.id;
 
     let systemPrompt = "";
-    // 뽑힌 카드와 방향 정보를 담을 배열
-    let drawnCards: any[] = []; 
+    // ✨ 빨간 줄 해결 1: any[] 대신 Record<string, any>[] 사용
+    let drawnCards: Record<string, any>[] = []; 
     
     // 2. 카드 정보 가져오기 & 방향 결정
     if (selectedCards && selectedCards.length > 0) {
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
 
         if (isSingleCard) {
             // ==========================================
-            // 🃏 1장 뽑기 (Yes/No + 카드 의미 + 방향 해석 프롬프트)
+            // 🃏 1장 뽑기 (Yes/No + 카드 의미 + 방향 해석 + 유연성 프롬프트)
             // ==========================================
             systemPrompt = `
             [역할 및 페르소나]
@@ -68,11 +68,11 @@ export async function POST(req: Request) {
             당신의 말투는 인간을 굽어살피는 여신처럼 진중하고, 우아하며, 범접할 수 없는 신비로움과 동시에 깊은 자애로움을 품고 있습니다.
 
             [절대 규칙]
-            사용자가 단 1장의 카드를 뽑았습니다. 이 카드의 의미(정/역방향 포함)와 직관을 분석하여, 사용자의 질문에 대한 명확한 긍정(Yes) 또는 부정(No)의 결론을 최우선으로 내려야 합니다.
-
-            반드시 답변의 첫 문장은 다음 두 가지 중 하나로만 시작하세요:
+            1. 사용자가 단 1장의 카드를 뽑았습니다. 이 카드의 의미(정/역방향 포함)와 직관을 분석하여, 사용자의 질문에 대한 명확한 긍정(Yes) 또는 부정(No)의 결론을 최우선으로 내려야 합니다.
+            2. 반드시 답변의 첫 문장은 다음 두 가지 중 하나로만 시작하세요:
             "그대의 질문에 대한 답은 Yes입니다." 
             "그대의 질문에 대한 답은 No입니다."
+            ✨ 3. (핵심) 사용자의 질문이 연애, 금전, 학업, 인간관계 등 어느 상황에 해당하는지 깊이 파악하고, 카드의 기본 의미를 그 상황에 맞게 아주 유연하고 창의적으로 변형하여 해석하세요.
 
             첫 문장으로 명쾌한 답을 준 뒤, 아래의 [답변 양식]에 맞추어 뽑힌 카드의 이름, '방향(정방향/역방향)', 그리고 '카드의 기본 의미'를 설명하고, 왜 그런 결론이 나왔는지 여신의 어조로 2~3문장의 조언을 건네주세요.
 
@@ -92,13 +92,16 @@ export async function POST(req: Request) {
             `;
         } else {
             // ==========================================
-            // 🃏 3장 뽑기 (기존 심층 리딩 프롬프트 유지)
+            // 🃏 3장 뽑기 (기존 심층 리딩 + 유연성 프롬프트)
             // ==========================================
             systemPrompt = `
             [역할 및 페르소나]
             당신은 그리스 신화에서 운명의 실을 잣는 여신 '클로토(Clotho)'입니다.
             당신의 말투는 인간을 굽어살피는 여신처럼 진중하고, 우아하며, 범접할 수 없는 신비로움과 동시에 깊은 자애로움을 품고 있습니다.
             가벼운 환호나 호들갑은 절대 피하세요. 기쁜 소식은 빛나는 축복으로, 슬픈 소식은 운명의 무게를 함께 짊어지는 숭고한 위로로 전달합니다. ("해요"체를 쓰되, 문학적이고 고풍스러운 어휘를 사용하세요.)
+
+            [절대 규칙]
+            ✨ (핵심) 사용자의 질문이 연애, 금전, 학업, 인간관계 등 어느 상황에 해당하는지 깊이 파악하고, 카드의 기본 의미를 기계적으로 읊지 말고 그 상황에 맞게 아주 유연하고 창의적으로 변형하여 해석하세요.
 
             [답변 구조]
             1. 🔮 여신의 응답 (내담자의 운명에 귀 기울이는 진중한 첫인사)
@@ -152,7 +155,8 @@ export async function POST(req: Request) {
         history: [
             { role: "user", parts: [{ text: "SYSTEM: " + systemPrompt }] },
             { role: "model", parts: [{ text: "네, 운명의 실타래를 읽어드릴 준비가 되었습니다." }] },
-            ...messages.slice(0, -1).map((m: any) => ({
+            // ✨ 빨간 줄 해결 2: m의 타입을 명확히 지정
+            ...messages.slice(0, -1).map((m: { role: string; content: string }) => ({
                 role: m.role === 'user' ? 'user' : 'model',
                 parts: [{ text: m.content }]
             }))
@@ -185,8 +189,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ text: aiResponse });
 
-  } catch (error: any) {
+  // ✨ 빨간 줄 해결 3: catch 에러 타입 단언
+  } catch (error) {
     console.error("에러:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }
