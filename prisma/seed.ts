@@ -107,6 +107,7 @@ async function main() {
         name: card.name,
         nameKo: card.nameKo,
         meaningUp: card.meaningUp,
+        meaningRev: card.meaningRev, // ✨ 이제 기존 카드도 역방향 업데이트됨!
         imageUrl: card.imageUrl,
       },
       create: {
@@ -114,8 +115,8 @@ async function main() {
         name: card.name,
         nameKo: card.nameKo,
         meaningUp: card.meaningUp,
+        meaningRev: card.meaningRev, // ✨ 새 카드에도 진짜 역방향 뜻이 들어감!
         imageUrl: card.imageUrl,
-        meaningRev: "역방향 의미는 추후 업데이트",
       },
     })
   }
