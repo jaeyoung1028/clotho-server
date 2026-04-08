@@ -5,11 +5,11 @@ import { prisma } from "@/lib/prisma";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const messages = body.messages;
+    const messages = body.messages || [];
     
-    // 프론트에서 어떤 이름으로 보내든 카드 배열을 찾아냄
+    // 프론트엔드가 어떤 이름(Key)으로 보내든 카드 배열을 악착같이 찾아냅니다.
     const targetCards = body.selectedCards || body.cards || body.cardIds || [];
-    const lastMessage = messages[messages.length - 1].content;
+    const lastMessage = messages.length > 0 ? messages[messages.length - 1].content : "";
     
     const apiKey = process.env.GOOGLE_API_KEY!;
     const genAI = new GoogleGenerativeAI(apiKey);
@@ -17,8 +17,8 @@ export async function POST(req: Request) {
     let systemPrompt = "";
     let drawnCards: any[] = []; 
     
+    // 1. 카드 정보 및 프롬프트 준비
     if (targetCards && targetCards.length > 0) {
-        // DB에서 카드 정보 조회
         const cardsFromDB = await prisma.tarotCard.findMany({
             where: { number: { in: targetCards.map((n: any) => Number(n)) } }
         });
@@ -41,24 +41,19 @@ export async function POST(req: Request) {
             `${index + 1}번째 카드: ${card.nameKo} - [${card.directionName}]\n- 의미: ${card.currentMeaning}`
         ).join("\n\n");
 
-        // 1장 / 3장 프롬프트 설정
         if (targetCards.length === 1) {
-            systemPrompt = `당신은 운명의 여신 '클로토'입니다. 
-딱 1장의 카드만 해석하세요. 답변 시작은 반드시 "그대의 질문에 대한 답은 [Yes/No]입니다."여야 합니다. 
-[카드 정보]\n${cardInfoText}\n\n[질문]: ${lastMessage}`;
+            systemPrompt = `당신은 운명의 여신 '클로토'입니다. 질문에 대한 답은 반드시 "그대의 질문에 대한 답은 [Yes/No]입니다."로 시작하세요.\n[카드 정보]\n${cardInfoText}\n\n[질문]: ${lastMessage}`;
         } else {
-            systemPrompt = `당신은 운명의 여신 '클로토'입니다. 
-3장의 카드를 [과거-현재-미래] 순서로 해석하세요. 매우 우아하고 진중한 말투를 사용하세요.
-[카드 정보]\n${cardInfoText}\n\n[질문]: ${lastMessage}`;
+            systemPrompt = `당신은 운명의 여신 '클로토'입니다. 3장의 카드를 [과거-현재-미래] 순서로 해석하세요.\n[카드 정보]\n${cardInfoText}\n\n[질문]: ${lastMessage}`;
         }
     } else {
-        systemPrompt = `당신은 운명의 여신 클로토입니다. 다정하게 대화하세요.`;
+        systemPrompt = `당신은 운명의 여신 클로토입니다. 신비롭고 다정하게 대답하세요.`;
     }
 
+    // 2. AI 모델 설정 (검열 해제 포함)
     const model = genAI.getGenerativeModel({ 
         model: "gemini-1.5-flash", 
         systemInstruction: systemPrompt,
-        // ✨ [추가] AI가 무서운 카드(죽음 등) 보고 대답 거부하지 못하게 검열 해제
         safetySettings: [
             { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
             { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -68,44 +63,45 @@ export async function POST(req: Request) {
         generationConfig: { maxOutputTokens: 1500, temperature: 0.8 }
     });
 
-    const chatSession = model.startChat({
-        history: messages.slice(0, -1).map((m: any) => ({
-            role: m.role === 'user' ? 'user' : 'model',
-            parts: [{ text: m.content }]
-        }))
-    });
-    
-    const result = await chatSession.sendMessage(lastMessage);
+    // 3. AI 응답 생성
+    const result = await model.generateContent(lastMessage);
     const aiResponse = result.response.text();
 
-    // ============================================================
-    // 🚫 [실험] DB 저장 로직 임시 차단 (여기가 범인인지 확인용)
-    // ============================================================
-    /*
+    // 4. DB 저장 (다시 활성화!)
     if (targetCards.length > 0 && drawnCards.length > 0) {
-        await prisma.reading.create({
-            data: {
-                userId: (await prisma.user.findFirst())?.id || "", 
-                question: lastMessage,
-                fullAnswer: aiResponse,
-                spreadType: targetCards.length === 1 ? "one-card" : "three-card",
-                cards: {
-                    create: drawnCards.map((card, idx) => ({
-                        cardId: card.id,        
-                        position: idx, 
-                        orientation: card.orientation 
-                    }))
-                }
+        try {
+            // 유저가 한 명도 없을 경우를 대비한 최소한의 안전장치
+            const user = await prisma.user.findFirst();
+            if (user) {
+                await prisma.reading.create({
+                    data: {
+                        userId: user.id,
+                        question: lastMessage,
+                        fullAnswer: aiResponse,
+                        spreadType: targetCards.length === 1 ? "one-card" : "three-card",
+                        cards: {
+                            create: drawnCards.map((card, idx) => ({
+                                cardId: card.id,        
+                                position: idx, 
+                                orientation: card.orientation 
+                            }))
+                        }
+                    }
+                });
             }
-        });
+        } catch (dbError: any) {
+            // DB 저장에서 터지면 여기서 잡아서 로그를 남깁니다.
+            console.error("DB 저장 실패:", dbError.message);
+            // 흐름을 끊지 않기 위해 일단 대답은 반환합니다.
+        }
     }
-    */
-    // ============================================================
 
     return NextResponse.json({ text: aiResponse });
 
-  } catch (error) {
-    console.error("Critical Error:", error);
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch (error: any) {
+    console.error("최종 에러:", error.message);
+    return NextResponse.json({ 
+      error: "백엔드 에러 발생: " + error.message 
+    }, { status: 500 });
   }
 }
