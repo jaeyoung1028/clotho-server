@@ -10,15 +10,14 @@ export async function POST(req: Request) {
     const apiKey = process.env.GOOGLE_API_KEY!;
     const genAI = new GoogleGenerativeAI(apiKey);
     
-    // ✨ [수정 완료] 가장 빠르고 안정적인 1.5-flash 모델 적용 & 토큰 최적화
+    // 👇 이 부분을 아까 제가 드린 1.5에서 다시 2.5로 바꿔주세요!
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash", 
+        model: "gemini-2.5-flash", // 원래 쓰시던 이름으로 원상복구!
         generationConfig: { 
-            maxOutputTokens: 1500, // 답변이 중간에 끊기지 않도록 여유 있게 설정
-            temperature: 0.7       // 일관성 있는 답변을 위해 창의성 살짝 조절
+            maxOutputTokens: 1500, // 👈 이건 끊김 방지용이니 1500으로 그대로 둡니다!
+            temperature: 0.7
         }
     });
-
     // 1. 유저 확인
     let testUser = await prisma.user.findFirst({ where: { name: "TestGuest" } });
     if (!testUser) {
