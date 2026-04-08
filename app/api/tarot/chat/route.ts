@@ -9,9 +9,14 @@ export async function POST(req: Request) {
     
     const apiKey = process.env.GOOGLE_API_KEY!;
     const genAI = new GoogleGenerativeAI(apiKey);
+    
+    // ✨ [수정 완료] 가장 빠르고 안정적인 1.5-flash 모델 적용 & 토큰 최적화
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.0-flash", // 모델명은 현재 사용 중인 최신 버전으로 유지하세요
-        generationConfig: { maxOutputTokens: 2000 }
+        model: "gemini-1.5-flash", 
+        generationConfig: { 
+            maxOutputTokens: 1500, // 답변이 중간에 끊기지 않도록 여유 있게 설정
+            temperature: 0.7       // 일관성 있는 답변을 위해 창의성 살짝 조절
+        }
     });
 
     // 1. 유저 확인
@@ -54,22 +59,21 @@ export async function POST(req: Request) {
 
         if (isSingleCard) {
             // ==========================================
-            // 🃏 1장 뽑기 전용 시스템 프롬프트 (강력한 제약)
+            // 🃏 1장 뽑기 전용 시스템 프롬프트
             // ==========================================
             systemPrompt = `
             당신은 운명의 여신 '클로토'입니다. 
-            [절대 규칙: 1장 뽑기 모드]
-            1. 사용자는 단 '1장'의 카드만 뽑았습니다. 절대로 추가적인 카드를 언급하거나 3장을 해석하지 마세요.
-            2. 답변의 시작은 반드시 "그대의 질문에 대한 답은 [Yes/No]입니다."로 시작해야 합니다. (질문의 내용에 따라 카드의 정/역방향과 의미를 고려해 Yes 또는 No를 단호하게 결정하세요.)
-            3. 뽑힌 카드가 '정방향'인지 '역방향'인지 답변에 반드시 명시하세요.
-            4. 여신의 말투(진중함, 우아함)를 유지하며 1장에 대해서만 심도 있게 조언하세요.
+            [절대 규칙]
+            1. 사용자는 단 '1장'의 카드만 뽑았습니다. 절대로 추가적인 카드를 언급하지 마세요.
+            2. 답변의 시작은 반드시 "그대의 질문에 대한 답은 [Yes/No]입니다."로 시작해야 합니다.
+            3. 뽑힌 카드가 '정방향'인지 '역방향'인지 반드시 명시하세요.
 
             [출력 양식]
             그대의 질문에 대한 답은 [Yes/No]입니다.
 
             ### 🃏 운명의 단일 카드: [카드이름] - [정방향/역방향]
             * 📖 **카드의 의미:** [카드의 기본 의미]
-            * 🔮 **여신의 해석:** [왜 Yes/No인지 설명하며 주는 신탁]
+            * 🔮 **여신의 해석:** [왜 Yes/No인지 설명]
 
             사용자가 뽑은 카드 정보:
             ${cardInfoText}
@@ -78,15 +82,14 @@ export async function POST(req: Request) {
             `;
         } else {
             // ==========================================
-            // 🃏 3장 뽑기 전용 시스템 프롬프트 (시간선 고정)
+            // 🃏 3장 뽑기 전용 시스템 프롬프트
             // ==========================================
             systemPrompt = `
             당신은 운명의 여신 '클로토'입니다.
-            [절대 규칙: 3장 뽑기 모드]
+            [절대 규칙]
             1. 3장의 카드를 각각 [과거 - 현재 - 미래]의 시간선으로 배정하여 해석하세요.
-            2. 1번째 카드는 과거, 2번째는 현재, 3번째는 미래입니다. 이 순서를 절대 섞지 마세요.
-            3. 각 카드마다 반드시 [정방향] 또는 [역방향]임을 제목에 표시하세요.
-            4. 마지막에는 3장의 흐름을 요약하는 '최종 신탁'을 제공하세요.
+            2. 각 카드마다 반드시 [정방향] 또는 [역방향]임을 표시하세요.
+            3. 마지막에는 3장의 흐름을 요약하는 '최종 신탁'을 제공하세요.
 
             [출력 양식]
             🔮 여신의 응답 (인사말)
@@ -116,7 +119,7 @@ export async function POST(req: Request) {
     const chatSession = model.startChat({
         history: [
             { role: "user", parts: [{ text: "SYSTEM: " + systemPrompt }] },
-            { role: "model", parts: [{ text: "운명의 실타래를 읽을 준비가 되었습니다. 그대의 질문에 오직 한 가닥(또는 세 가닥)의 실로만 답하겠노라." }] },
+            { role: "model", parts: [{ text: "운명의 실타래를 읽을 준비가 되었습니다." }] },
             ...messages.slice(0, -1).map((m: any) => ({
                 role: m.role === 'user' ? 'user' : 'model',
                 parts: [{ text: m.content }]
@@ -149,7 +152,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ text: aiResponse });
 
   } catch (error) {
-    console.error("에러:", error);
+    console.error("에러 발생:", error);
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }
