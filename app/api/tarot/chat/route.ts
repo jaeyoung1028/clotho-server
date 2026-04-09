@@ -19,10 +19,11 @@ export async function POST(req: Request) {
     const apiKey = process.env.GOOGLE_API_KEY!;
     if (!apiKey) throw new Error("서버 환경 변수에 GOOGLE_API_KEY가 없습니다.");
 
+    // ✨ 모델 버전을 1.5로 복구! (가장 안정적이고 빠름)
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash", // 사용자님 설정 유지!
-        generationConfig: { maxOutputTokens: 5000 } // 사용자님 설정 유지!
+        model: "gemini-2.5-flash-lite", 
+        generationConfig: { maxOutputTokens: 2000 } 
     });
 
     // 2. 유저 확인 (DB 에러 방어)
@@ -43,7 +44,6 @@ export async function POST(req: Request) {
     // 3. 카드 정보 가져오기 & 방향 결정
     if (selectedCards && selectedCards.length > 0) {
         
-        // 카드 조회 중 에러 나면 친절하게 뱉기
         let cardsFromDB: any[] = [];
         try {
             cardsFromDB = await prisma.tarotCard.findMany({
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
             throw new Error("카드 목록 에러: DB에서 카드를 불러오지 못했습니다.");
         }
 
-        // 유저가 뽑은 순서대로 강제 줄 세우기!
+        // 유저가 뽑은 순서대로 강제 줄 세우기
         const orderedCardsFromDB = selectedCards.map((num: number) => 
             cardsFromDB.find((c) => c.number === Number(num))
         ).filter(Boolean);
@@ -73,7 +73,6 @@ export async function POST(req: Request) {
             };
         });
 
-        // AI에게 넘겨줄 텍스트
         const cardInfoText = drawnCards.map((card, index) => 
             `${index + 1}번째 카드: ${card.nameKo} (${card.name}) - [${card.directionName}]\n- 원래 의미: ${card.currentMeaning}`
         ).join("\n\n");
@@ -97,13 +96,6 @@ export async function POST(req: Request) {
             3. 사용자의 질문이 연애, 금전, 학업, 인간관계 등 어느 상황에 해당하는지 깊이 파악하고, 카드의 기본 의미를 그 상황에 맞게 유연하고 창의적으로 변형하여 해석하세요.
 
             첫 문장으로 명쾌한 답을 준 뒤, 아래의 [답변 양식]에 맞추어 뽑힌 카드의 이름, '방향(정방향/역방향)', 그리고 '카드의 기본 의미'를 설명하고, 왜 그런 결론이 나왔는지 여신의 어조로 2~3문장의 조언을 건네주세요.
-
-            [답변 양식 예시]
-            그대의 질문에 대한 답은 Yes입니다. (또는 No입니다.)
-
-            ### 🃏 운명의 단일 카드: [카드이름] - [방향]
-            * 📖 **카드의 의미:** [카드의 원래 의미]
-            * 🔮 **여신의 해석:** [카드의 상징과 방향을 바탕으로 왜 Yes/No 인지 설명하고 조언]
 
             ---
             [실제 상담 진행]
@@ -130,39 +122,11 @@ export async function POST(req: Request) {
 
             [답변 구조]
             1. 🔮 여신의 응답 (내담자의 운명에 귀 기울이는 진중한 첫인사)
-            2. ⏳ 운명의 시간선 (ex: "첫 번째 카드는 과거를, 두 번째 카드는 현재를, 세 번째 카드는 미래를 비춥니다.")
+            2. ⏳ 운명의 시간선
             3. 🃏 운명의 실타래 전개 (과거, 현재, 미래 순서대로 카드 해석)
                 (⚠️중요: 카드를 소개할 때는 반드시 "### 🃏 [과거/현재/미래]를 비추는 [N] 번째 카드: [카드이름 - 방향]입니다." 형식으로 작성하세요.)
             4. 📜 여신의 최종 신탁 (3장의 흐름을 종합한 최종 요약 정리 및 조언)
             5. 🌙 여신의 축복 (마무리)
-
-            [대답 예시 1: 긍정적인 상황]
-            - 질문: "이번에 준비한 졸업작품 프로젝트 성공할까요?"
-            - 답변:
-            "인간의 아이야, 그대가 쏟아부은 땀방울이 운명의 물레 위에서 찬란한 금빛 실로 엮이고 있음을 내 굽어보고 있답니다. 두려움을 거두고, 내가 펼쳐내는 그대의 운명선을 마주하세요.
-
-            **⏳ 운명의 시간선**
-            내가 뽑아낸 세 가닥의 실은 각각 그대의 과거, 현재, 미래를 비추고 있답니다.
-
-            **🃏 운명의 실타래 전개**
-
-            ### 🃏 과거를 비추는 첫 번째 카드: [태양 (The Sun) - 정방향]입니다.
-            * 📖 **카드의 의미:** 눈부신 성취, 생명력, 완전한 긍정
-            * 🔮 **여신의 해석:** 구름 한 점 없는 태양의 축복이 그대의 시작과 함께했군요. 프로젝트의 초창기부터 그대는 굳건한 생명력과 열정을 품고 달려왔습니다.
-
-            ### 🃏 현재를 비추는 두 번째 카드: [완드 8 (Eight of Wands) - 정방향]입니다.
-            * 📖 **카드의 의미:** 빠른 전개, 거침없는 흐름
-            * 🔮 **여신의 해석:** 허공을 가르는 여덟 개의 지팡이처럼, 지금 그대의 시간은 무서운 속도로 목적지를 향해 나아가고 있습니다. 막힘없이 순조로운 흐름 속에 놓여 있지요.
-
-            ### 🃏 미래를 비추는 세 번째 카드: [세계 (The World) - 정방향]입니다.
-            * 📖 **카드의 의미:** 완성과 통합, 성공적인 결실
-            * 🔮 **여신의 해석:** 우주의 완성을 뜻하는 카드가 그대의 끝에 닿아 있습니다. 그대의 졸업작품은 마침내 훌륭한 결실을 맺어, 아름다운 세계로 완성될 것입니다.
-
-            **📜 여신의 최종 신탁 (최종 정리)**
-            과거의 뜨거운 열정(태양)이 현재의 거침없는 추진력(완드 8)으로 이어져, 마침내 완벽한 성공(세계)이라는 종착지에 닿는 눈부신 흐름입니다. 망설임은 부질없는 것이니, 그저 스스로를 믿고 묵묵히 마지막 매듭을 지으세요.
-
-            **🌙 여신의 축복**
-            그대의 앞날에 눈부신 성운의 빛이 가득하기를. 나의 물레가 그대의 찬란한 완성을 지켜볼 것입니다."
 
             ---
             [실제 상담 진행]
@@ -213,11 +177,11 @@ export async function POST(req: Request) {
             });
             console.log(`✅ DB 저장 완료: Reading (${selectedCards.length}장)`);
         } catch (saveError) {
-            // DB 저장이 실패해도 에러를 내지 않고 텍스트는 프론트로 보냅니다.
             console.error("DB 저장 오류 (응답은 반환됨):", saveError);
         }
     }
 
+    // ✨ 핵심: 프론트엔드가 카드를 뒤집을 수 있도록 'cardsInfo' 배열을 추가로 던져줍니다!
     return NextResponse.json({ 
         text: aiResponse,
         cardsInfo: drawnCards.map(c => ({ id: c.number, orientation: c.orientation })) 
