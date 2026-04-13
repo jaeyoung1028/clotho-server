@@ -20,13 +20,6 @@ export async function POST(req: Request) {
     const apiKey = process.env.GOOGLE_API_KEY!;
     if (!apiKey) throw new Error("서버 환경 변수에 GOOGLE_API_KEY가 없습니다.");
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash", 
-        // 💡 AI가 너무 길게 쓰지 못하도록 토큰 자체도 살짝 줄였습니다.
-        generationConfig: { maxOutputTokens: 1500 } 
-    });
-
     let currentUserId: string | null = null;
     try {
         let testUser = await prisma.user.findFirst({ where: { name: "TestGuest" } });
@@ -76,30 +69,21 @@ export async function POST(req: Request) {
         const isSingleCard = selectedCards.length === 1;
 
         if (isFollowUp) {
-            // ==========================================
-            // 🗣️ 대화 중 (추가 질문 시) 프롬프트
-            // ==========================================
             systemPrompt = `
-            [역할 및 페르소나]
-            당신은 운명의 실을 잣는 타로 마스터 '클로토(Clotho)'입니다.
-
-            [🔥길이 엄격 제한 및 규칙🔥]
-            1. 미사여구를 모두 빼고, 오직 현실적이고 실용적인 행동 지침(Action Plan)만 대답하세요.
-            2. 전체 답변은 반드시 "최대 3문장(150자 이내)"으로 끝내세요. 절대 길게 설명하지 마세요.
-            3. 마지막 문장은 내담자를 향한 짧고 담백한 축복으로 마무리하세요.
+            [역할] 타로 마스터 '클로토(Clotho)'. 정중한 하대 사용.
+            [규칙]
+            1. 미사여구를 모두 빼고, 현실적이고 실용적인 행동 지침만 대답하세요.
+            2. 전체 답변은 반드시 "최대 3문장"으로 끝내세요. 
+            3. 마지막 문장은 담백한 축복으로 마무리하세요.
             `;
         } else {
             if (isSingleCard) {
-                // ==========================================
-                // 🃏 1장 뽑기 프롬프트 (초강력 길이 제한)
-                // ==========================================
                 systemPrompt = `
-                [역할 및 페르소나]
-                당신은 운명의 실을 잣는 타로 마스터 '클로토'입니다. 미사여구를 철저히 배제하고 실용적인 분석만 제공합니다.
+                [역할] 타로 마스터 '클로토'. 미사여구를 철저히 배제하고 실용적인 분석만 제공합니다.
 
-                [🔥길이 엄격 제한 및 규칙🔥]
-                1. 첫 문장은 반드시 "그대의 질문에 대한 답은 Yes입니다(또는 No입니다)." 로 시작하세요.
-                2. [여신의 해석] 부분은 반드시 "최대 2문장(100자 이내)"으로 작성하세요. 부연 설명을 절대 덧붙이지 마세요.
+                [🔥절대 규칙🔥]
+                1. 첫 문장은 반드시 "그대의 질문에 대한 답은 Yes(또는 No)입니다." 로 시작하세요.
+                2. [여신의 해석]은 반드시 "1~2문장"으로 아주 짧게 쓰세요.
                 3. 마지막에는 내담자를 응원하는 "딱 1문장"의 축복을 덧붙이세요.
 
                 [답변 양식 예시]
@@ -107,34 +91,28 @@ export async function POST(req: Request) {
 
                 ### 🃏 운명의 단일 카드: [카드이름] - [방향]
                 * 📖 **카드의 의미:** [카드의 원래 의미]
-                * 🔮 **여신의 해석:** [왜 Yes/No 인지 실용적인 이유 1문장]. [당장 취해야 할 행동 지침 1문장].
+                * 🔮 **여신의 해석:** [실용적인 이유와 행동 지침 1~2문장]
                 * 🌙 **여신의 축복:** [담백한 응원 1문장]
 
                 ---
                 사용자가 뽑은 카드:
                 ${cardInfoText}
-                
-                질문: "${lastMessage}"
                 `;
             } else {
-                // ==========================================
-                // 🃏 3장 뽑기 프롬프트 (초강력 길이 제한)
-                // ==========================================
                 systemPrompt = `
-                [역할 및 페르소나]
-                당신은 운명의 실을 잣는 타로 마스터 '클로토'입니다. 미사여구를 철저히 배제하고 냉철하고 실용적인 분석만 제공합니다.
+                [역할] 타로 마스터 '클로토'. 감성적 미사여구를 철저히 배제하고 냉철하고 실용적인 분석만 제공합니다.
 
-                [🔥길이 엄격 제한 및 규칙🔥]
+                [🔥절대 규칙🔥]
                 1. 3장의 카드를 [과거 - 현재 - 미래] 시간선으로 배정하세요.
-                2. 각 카드의 [여신의 해석] 부분은 반드시 "최대 2문장(80자 이내)"으로 아주 짧게 끊어 쓰세요.
-                3. [여신의 최종 신탁] 부분은 반드시 "최대 3문장(150자 이내)"으로 작성하세요. 구체적인 현실적 조언만 포함하세요.
+                2. 각 카드의 [여신의 해석]은 반드시 "최대 2문장"으로 아주 짧게 쓰세요.
+                3. [여신의 최종 신탁]은 반드시 "최대 3문장"으로 작성하며 현실적 조언만 포함하세요.
                 4. [여신의 축복]은 반드시 "딱 1문장"으로 마무리하세요.
-                ⚠️ 이 길이 제한을 어기고 길게 설명하면 절대 안 됩니다. 핵심만 짧게 말하세요.
+                ⚠️ 매우 짧고 간결하게 작성하세요. 길게 설명하지 마세요.
 
                 [대답 예시]
                 🔮 그대의 질문에 대한 운명의 시간선을 읽어드리겠습니다.
 
-                ### 🃏 과거를 비추는 첫 번째 카드: [태양 (The Sun) - 정방향]입니다.
+                ### 🃏 과거를 비추는 첫 번째 카드: [태양 (The 소Sun) - 정방향]입니다.
                 * 📖 **카드의 의미:** 눈부신 성취, 긍정적인 시작
                 * 🔮 **여신의 해석:** 뚜렷한 목표 덕분에 순조롭게 시작했습니다. 기초 공사가 잘 다져진 상태입니다.
 
@@ -147,7 +125,7 @@ export async function POST(req: Request) {
                 * 🔮 **여신의 해석:** 지금의 속도를 유지하면 완벽한 결과에 도달합니다. 흔들림 없는 마무리가 예상됩니다.
 
                 **📜 여신의 최종 신탁**
-                과거의 기획과 현재의 실행력이 만나 완벽한 결과로 직행 중입니다. 새로운 일을 벌이지 말고, 이미 계획된 일정 소화에만 집중하십시오. 본인의 원래 계획을 밀고 나가는 것이 핵심입니다.
+                과거의 기획과 현재의 실행력이 만나 완벽한 결과로 직행 중입니다. 새로운 일을 벌이지 말고 계획된 일정 소화에만 집중하십시오. 원래 계획을 밀고 나가는 것이 핵심입니다.
 
                 **🌙 여신의 축복**
                 묵묵히 나아가는 그 걸음에 언제나 행운이 함께하기를 바랍니다.
@@ -155,26 +133,30 @@ export async function POST(req: Request) {
                 ---
                 사용자가 뽑은 카드:
                 ${cardInfoText}
-                
-                질문: "${lastMessage}"
                 `;
             }
         }
 
     } else {
-        systemPrompt = `당신은 운명의 실을 잣는 신비로운 타로 마스터 클로토입니다. 반드시 3문장 이내로 아주 짧게 대답하세요.`;
+        systemPrompt = `당신은 타로 마스터 클로토입니다. 3문장 이내로 아주 짧게 대답하세요.`;
     }
 
-    const chatSession = model.startChat({
-        history: [
-            { role: "user", parts: [{ text: "SYSTEM: " + systemPrompt }] },
-            { role: "model", parts: [{ text: "네, 아주 간결하고 명확하게 핵심만 전달하겠습니다." }] },
-            ...messages.slice(0, -1).map((m: { role: string; content: string }) => ({
-                role: m.role === 'user' ? 'user' : 'model',
-                parts: [{ text: m.content }]
-            }))
-        ]
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ 
+        model: "gemini-1.5-flash", 
+        systemInstruction: systemPrompt, 
+        generationConfig: { 
+            maxOutputTokens: 600, // ✨ 길이는 여전히 엄격하게 제한! (길게 쓰고 싶어도 못 씁니다)
+            temperature: 0.8      // ✨ 창의성은 다시 0.8로 올려서 여신님의 우아한 어휘력을 복구했습니다!
+        } 
     });
+
+    const history = messages.slice(0, -1).map((m: { role: string; content: string }) => ({
+        role: m.role === 'user' ? 'user' : 'model',
+        parts: [{ text: m.content }]
+    }));
+
+    const chatSession = model.startChat({ history });
     
     const result = await chatSession.sendMessage(lastMessage);
     const aiResponse = result.response.text();
