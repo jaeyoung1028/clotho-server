@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(req: Request) {
   try {
-    // 1. 프론트엔드 데이터 수신 (에러 방어)
     let body: any = {};
     try {
       body = await req.json();
@@ -16,17 +15,18 @@ export async function POST(req: Request) {
     const selectedCards = body.selectedCards || body.cards || body.cardIds || [];
     const lastMessage = messages[messages.length - 1].content;
     
+    // ✨ 핵심: 대화 기록이 1개보다 많으면 '추가 질문(대화 중)'으로 간주합니다.
+    const isFollowUp = messages.length > 1;
+    
     const apiKey = process.env.GOOGLE_API_KEY!;
     if (!apiKey) throw new Error("서버 환경 변수에 GOOGLE_API_KEY가 없습니다.");
 
-    // ✨ 모델 버전을 1.5로 복구! (가장 안정적이고 빠름)
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash-lite", 
+        model: "gemini-1.5-flash", 
         generationConfig: { maxOutputTokens: 2000 } 
     });
 
-    // 2. 유저 확인 (DB 에러 방어)
     let currentUserId: string | null = null;
     try {
         let testUser = await prisma.user.findFirst({ where: { name: "TestGuest" } });
@@ -35,15 +35,13 @@ export async function POST(req: Request) {
         }
         currentUserId = testUser.id;
     } catch (dbError) {
-        console.error("유저 조회/생성 실패 (하지만 진행은 계속함):", dbError);
+        console.error("유저 조회/생성 실패:", dbError);
     }
 
     let systemPrompt = "";
     let drawnCards: Record<string, any>[] = []; 
     
-    // 3. 카드 정보 가져오기 & 방향 결정
     if (selectedCards && selectedCards.length > 0) {
-        
         let cardsFromDB: any[] = [];
         try {
             cardsFromDB = await prisma.tarotCard.findMany({
@@ -53,16 +51,14 @@ export async function POST(req: Request) {
             throw new Error("카드 목록 에러: DB에서 카드를 불러오지 못했습니다.");
         }
 
-        // 유저가 뽑은 순서대로 강제 줄 세우기
         const orderedCardsFromDB = selectedCards.map((num: number) => 
             cardsFromDB.find((c) => c.number === Number(num))
         ).filter(Boolean);
 
         if (orderedCardsFromDB.length === 0) {
-            throw new Error("뽑힌 카드가 데이터베이스에 존재하지 않습니다. 번호를 확인하세요.");
+            throw new Error("뽑힌 카드가 데이터베이스에 존재하지 않습니다.");
         }
 
-        // 50% 확률로 정방향/역방향 결정
         drawnCards = orderedCardsFromDB.map((card: any) => {
             const isReversed = Math.random() < 0.5; 
             return {
@@ -79,70 +75,83 @@ export async function POST(req: Request) {
 
         const isSingleCard = selectedCards.length === 1;
 
-        if (isSingleCard) {
+        if (isFollowUp) {
             // ==========================================
-            // 🃏 1장 뽑기
+            // 🗣️ 대화 중 (추가 질문 시) 프롬프트
             // ==========================================
             systemPrompt = `
             [역할 및 페르소나]
-            당신은 그리스 신화에서 운명의 실을 잣는 여신 '클로토(Clotho)'입니다.
-            당신의 말투는 인간을 굽어살피는 여신처럼 진중하고, 우아하며, 범접할 수 없는 신비로움과 동시에 깊은 자애로움을 품고 있습니다.
+            당신은 운명의 실을 잣는 신비로운 타로 마스터 '클로토(Clotho)'입니다.
+
+            [상황]
+            내담자(사용자)는 이미 타로 해석을 마쳤으며, 방금 이전 해석에 대한 '추가 질문'을 던졌습니다.
+            * 내담자가 뽑았던 카드: \n${cardInfoText}
 
             [절대 규칙]
-            1. 사용자가 단 1장의 카드를 뽑았습니다. 이 카드의 의미(정/역방향 포함)와 직관을 분석하여, 사용자의 질문에 대한 명확한 긍정(Yes) 또는 부정(No)의 결론을 최우선으로 내려야 합니다.
-            2. 반드시 답변의 첫 문장은 다음 두 가지 중 하나로만 시작하세요:
-            "그대의 질문에 대한 답은 Yes입니다." 
-            "그대의 질문에 대한 답은 No입니다."
-            3. 사용자의 질문이 연애, 금전, 학업, 인간관계 등 어느 상황에 해당하는지 깊이 파악하고, 카드의 기본 의미를 그 상황에 맞게 유연하고 창의적으로 변형하여 해석하세요.
-
-            첫 문장으로 명쾌한 답을 준 뒤, 아래의 [답변 양식]에 맞추어 뽑힌 카드의 이름, '방향(정방향/역방향)', 그리고 '카드의 기본 의미'를 설명하고, 왜 그런 결론이 나왔는지 여신의 어조로 2~3문장의 조언을 건네주세요.
-
-            ---
-            [실제 상담 진행]
-            사용자가 뽑은 카드:
-            ${cardInfoText}
-            
-            질문: "${lastMessage}"
+            1. 카드를 처음부터 다시 해석하거나 전체 요약을 절대 반복하지 마세요. (종합 결과 출력 금지)
+            2. 오직 사용자의 "마지막 질문"에만 집중해서 명쾌하게 대답하세요.
+            3. 이전 대화 맥락과 뽑았던 카드의 의미를 참고하여, 다정하고 신비로운 여신의 말투로 3~4문장 내외로 짧게 조언하세요.
             `;
         } else {
             // ==========================================
-            // 🃏 3장 뽑기
+            // 🃏 첫 타로 리딩 프롬프트 (1장 / 3장)
             // ==========================================
-            systemPrompt = `
-            [역할 및 페르소나]
-            당신은 그리스 신화에서 운명의 실을 잣는 여신 '클로토(Clotho)'입니다.
-            당신의 말투는 인간을 굽어살피는 여신처럼 진중하고, 우아하며, 범접할 수 없는 신비로움과 동시에 깊은 자애로움을 품고 있습니다.
-            가벼운 환호나 호들갑은 절대 피하세요. 기쁜 소식은 빛나는 축복으로, 슬픈 소식은 숭고한 위로로 전달합니다.
+            if (isSingleCard) {
+                systemPrompt = `
+                [역할 및 페르소나]
+                당신은 그리스 신화에서 운명의 실을 잣는 여신 '클로토(Clotho)'입니다.
+                당신의 말투는 진중하고, 우아하며, 신비로움과 깊은 자애로움을 품고 있습니다.
 
-            [절대 규칙]
-            1. 사용자의 질문 상황(연애, 금전, 학업 등)에 맞추어 카드의 의미를 기계적으로 읊지 말고 창의적으로 해석하세요.
-            ✨ 2. (핵심) 3장의 카드는 무조건 [과거 - 현재 - 미래]의 시간선으로 해석해야 합니다. 1번째 카드는 과거, 2번째 카드는 현재, 3번째 카드는 미래입니다.
-            ✨ 3. 해석을 시작하기 전, 각 카드가 과거, 현재, 미래를 뜻한다는 것을 명확히 안내해 주세요.
-            ✨ 4. 모든 카드 해석이 끝난 후, 전체적인 흐름을 요약하는 [최종 정리본 설명]을 반드시 포함하세요.
+                [절대 규칙]
+                1. 단 1장의 카드를 뽑았습니다. 카드의 의미를 분석하여, 질문에 대한 명확한 긍정(Yes) 또는 부정(No)의 결론을 내려야 합니다.
+                2. 반드시 첫 문장은 "그대의 질문에 대한 답은 Yes입니다." 또는 "그대의 질문에 대한 답은 No입니다." 로 시작하세요.
+                3. 종합 요약이나 중복된 결론을 덧붙이지 마세요.
 
-            [답변 구조]
-            1. 🔮 여신의 응답 (내담자의 운명에 귀 기울이는 진중한 첫인사)
-            2. ⏳ 운명의 시간선
-            3. 🃏 운명의 실타래 전개 (과거, 현재, 미래 순서대로 카드 해석)
-                (⚠️중요: 카드를 소개할 때는 반드시 "### 🃏 [과거/현재/미래]를 비추는 [N] 번째 카드: [카드이름 - 방향]입니다." 형식으로 작성하세요.)
-            4. 📜 여신의 최종 신탁 (3장의 흐름을 종합한 최종 요약 정리 및 조언)
-            5. 🌙 여신의 축복 (마무리)
+                [답변 양식 예시]
+                그대의 질문에 대한 답은 Yes입니다. (또는 No입니다.)
 
-            ---
-            [실제 상담 진행]
-            사용자가 뽑은 카드:
-            ${cardInfoText}
-            
-            질문: "${lastMessage}"
-            위의 규칙과 예시를 철저히 지키고, 과거-현재-미래의 시간선에 맞추어 유기적인 스토리텔링과 최종 정리를 제공하세요.
-            `;
+                ### 🃏 운명의 단일 카드: [카드이름] - [방향]
+                * 📖 **카드의 의미:** [카드의 원래 의미]
+                * 🔮 **여신의 해석:** [왜 Yes/No 인지 설명하고 조언]
+
+                ---
+                사용자가 뽑은 카드:
+                ${cardInfoText}
+                
+                질문: "${lastMessage}"
+                `;
+            } else {
+                systemPrompt = `
+                [역할 및 페르소나]
+                당신은 그리스 신화에서 운명의 실을 잣는 여신 '클로토(Clotho)'입니다.
+                말투는 진중하고 우아하며 신비롭습니다. 가벼운 호들갑은 절대 피하세요.
+
+                [절대 규칙]
+                1. 3장의 카드는 무조건 [과거 - 현재 - 미래]의 시간선으로 해석하세요.
+                2. 각 카드가 과거, 현재, 미래를 뜻한다는 것을 명확히 안내해 주세요.
+                ✨ 3. (중요) 종합 결과(최종 신탁)는 답변의 맨 마지막에 단 한 번만 작성하며, 절대로 중복해서 요약하지 마세요.
+
+                [답변 구조]
+                1. 🔮 여신의 응답 (첫인사)
+                2. ⏳ 운명의 시간선
+                3. 🃏 운명의 실타래 전개 (과거, 현재, 미래 순서대로 카드 해석)
+                    (⚠️형식: "### 🃏 [과거/현재/미래]를 비추는 [N] 번째 카드: [카드이름 - 방향]입니다.")
+                4. 📜 여신의 최종 신탁 (단 한 번만 깔끔하게 요약)
+                5. 🌙 여신의 축복 (마무리)
+
+                ---
+                사용자가 뽑은 카드:
+                ${cardInfoText}
+                
+                질문: "${lastMessage}"
+                `;
+            }
         }
 
     } else {
         systemPrompt = `당신은 운명의 실을 잣는 신비로운 타로 마스터 클로토입니다. 이전 대화 맥락을 기억하고 다정하게 답변하세요.`;
     }
 
-    // 4. AI 응답 생성
     const chatSession = model.startChat({
         history: [
             { role: "user", parts: [{ text: "SYSTEM: " + systemPrompt }] },
@@ -157,8 +166,8 @@ export async function POST(req: Request) {
     const result = await chatSession.sendMessage(lastMessage);
     const aiResponse = result.response.text();
 
-    // 5. DB 저장 (안전장치 장착)
-    if (currentUserId && selectedCards && selectedCards.length > 0 && drawnCards.length > 0) {
+    // ✨ 핵심: '처음 타로를 뽑았을 때(!isFollowUp)'만 DB에 저장하도록 수정하여 DB 중복 저장 방지
+    if (!isFollowUp && currentUserId && selectedCards && selectedCards.length > 0 && drawnCards.length > 0) {
         try {
             await prisma.reading.create({
                 data: {
@@ -175,13 +184,12 @@ export async function POST(req: Request) {
                     }
                 }
             });
-            console.log(`✅ DB 저장 완료: Reading (${selectedCards.length}장)`);
+            console.log(`✅ DB 저장 완료: 첫 리딩 (${selectedCards.length}장)`);
         } catch (saveError) {
             console.error("DB 저장 오류 (응답은 반환됨):", saveError);
         }
     }
 
-    // ✨ 핵심: 프론트엔드가 카드를 뒤집을 수 있도록 'cardsInfo' 배열을 추가로 던져줍니다!
     return NextResponse.json({ 
         text: aiResponse,
         cardsInfo: drawnCards.map(c => ({ id: c.number, orientation: c.orientation })) 
@@ -193,7 +201,6 @@ export async function POST(req: Request) {
   }
 }
 
-// ✨ GET 방식으로 접속 시 무조건 500 에러를 뱉는 것을 방지
 export async function GET() {
     return NextResponse.json({ 
         message: "타로 백엔드 정상 작동 중! 프론트엔드에서 POST 방식으로 호출해주세요." 
