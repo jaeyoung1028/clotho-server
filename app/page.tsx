@@ -8,6 +8,7 @@ type Message = {
 };
 
 export default function Home() {
+  // --- 상태 관리 ---
   const [step, setStep] = useState<"intro" | "chat">("intro");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -15,23 +16,28 @@ export default function Home() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // 스크롤 자동 이동
   useEffect(() => {
     if (step === "chat") {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, step]);
 
-  // 1. 초기 질문 전송 (주소 수정: /api/tarot/chat -> /api/tarot)
+  // --- 기능 함수 ---
+
+  // 1. 초기 질문 전송 (Intro -> Chat)
   const handleInitialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || loading) return;
 
     setLoading(true);
     
+    // 사용자 질문 저장
     const initialUserMsg: Message = { role: "user", content: input };
     const newMessages = [initialUserMsg];
     setMessages(newMessages);
 
+    // 타로 카드 3장 랜덤 생성 (1~78)
     const randomCards: number[] = [];
     while (randomCards.length < 3) {
       const randomNum = Math.floor(Math.random() * 78) + 1;
@@ -41,10 +47,14 @@ export default function Home() {
     }
 
     try {
-      const response = await fetch("/api/tarot", { // 👈 주소 수정됨
+      // ✨ [중요] 호출 주소를 절대 경로 "/api/tarot"으로 확실히 고정합니다.
+      const response = await fetch("/api/tarot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMessages, selectedCards: randomCards }),
+        body: JSON.stringify({ 
+          messages: newMessages, 
+          selectedCards: randomCards 
+        }),
       });
 
       const data = await response.json();
@@ -54,28 +64,32 @@ export default function Home() {
         setStep("chat");
         setInput(""); 
       } else {
-        alert("오류: " + data.error);
+        // 백엔드에서 보낸 에러 메시지 확인
+        alert("운명의 실타래를 읽는 중 오류 발생: " + (data.error || data.text));
       }
     } catch (error) {
-      alert("서버 연결 실패");
+      alert("서버 연결에 실패했습니다. 네트워크 상태를 확인해주세요.");
+      console.error(error);
     } finally {
       setLoading(false);
     }
   };
 
-  // 2. 추가 질문 전송 (주소 수정: /api/tarot/chat -> /api/tarot)
+  // 2. 추가 질문 전송 (채팅 모드)
   const handleChatSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || loading) return;
 
     const userMsg: Message = { role: "user", content: input };
     const currentMessages = [...messages, userMsg];
+    
     setMessages(currentMessages);
     setInput("");
     setLoading(true);
 
     try {
-      const response = await fetch("/api/tarot", { // 👈 주소 수정됨
+      // ✨ 추가 질문도 동일한 "/api/tarot" 경로로 POST 요청을 보냅니다.
+      const response = await fetch("/api/tarot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: currentMessages }),
@@ -85,9 +99,12 @@ export default function Home() {
 
       if (response.ok) {
         setMessages((prev) => [...prev, { role: "model", content: data.text }]);
+      } else {
+        alert("추가 질문 응답 오류: " + (data.error || data.text));
       }
     } catch (error) {
       console.error(error);
+      alert("서버 연결 실패");
     } finally {
       setLoading(false);
     }
@@ -101,6 +118,8 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#1a1a1a] text-[#eee] font-sans flex flex-col items-center">
+      
+      {/* 🔮 1단계: 인트로 화면 */}
       {step === "intro" && (
         <div className="flex-1 flex flex-col justify-center items-center w-full max-w-2xl p-6 animate-fade-in">
           <h1 className="text-5xl font-bold text-[#d4af37] mb-4 text-center drop-shadow-lg">
@@ -130,6 +149,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* 🔮 2단계: 결과 및 채팅 화면 */}
       {step === "chat" && (
         <div className="w-full max-w-3xl flex-1 flex flex-col h-screen">
           <header className="p-4 bg-[#222] border-b border-[#333] flex justify-between items-center shadow-md">
@@ -143,11 +163,13 @@ export default function Home() {
             {messages.map((msg, idx) => {
               if (msg.role === "user") {
                 const answerMsg = messages[idx + 1];
+
                 return (
                   <div key={idx} className="bg-[#2a2a2a] p-6 rounded-2xl border-2 border-[#d4af37] shadow-[0_0_15px_rgba(212,175,55,0.2)]">
                     <div className="text-[#d4af37] font-bold mb-3 text-lg border-b border-[#444] pb-2">
                       Q. {msg.content}
                     </div>
+                    
                     {answerMsg ? (
                       <div className="whitespace-pre-wrap leading-relaxed text-gray-200">
                         {answerMsg.content}
