@@ -17,8 +17,8 @@ export async function POST(req: Request) {
     
     const isFollowUp = messages.length > 1;
     
-    const apiKey = process.env.GOOGLE_API_KEY!;
-    if (!apiKey) throw new Error("서버 환경 변수에 GOOGLE_API_KEY가 없습니다.");
+    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY!;
+    if (!apiKey) throw new Error("API KEY가 없습니다.");
 
     let currentUserId: string | null = null;
     try {
@@ -107,15 +107,16 @@ export async function POST(req: Request) {
     } else {
         systemPrompt = `당신은 타로 마스터 클로토입니다. 모호한 단어를 빼고 현실적으로 대답하세요.`;
     }
+    
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ 
-    model: "gemini-pro",  // ✅ 0.24.1에서 지원하는 유일한 무료 모델
-    systemInstruction: systemPrompt, 
-    generationConfig: { 
-        maxOutputTokens: 600, 
-        temperature: 0.7
-    } 
-});
+        model: "gemini-2.5-flash-lite",
+        systemInstruction: systemPrompt, 
+        generationConfig: { 
+            maxOutputTokens: 600, 
+            temperature: 0.7
+        } 
+    });
 
     const history = messages.slice(0, -1).map((m: { role: string; content: string }) => ({
         role: m.role === 'user' ? 'user' : 'model',
@@ -160,7 +161,6 @@ export async function POST(req: Request) {
   }
 }
 
-// ✨ [수정된 부분] GET 요청이 오면 에러를 띄워 프론트엔드가 POST를 쓰게 유도합니다.
 export async function GET() {
     return NextResponse.json(
         { error: "잘못된 요청 방식입니다. 해석을 보려면 POST 요청이 필요합니다." }, 
