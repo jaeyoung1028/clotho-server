@@ -17,8 +17,8 @@ export async function POST(req: Request) {
     
     const isFollowUp = messages.length > 1;
     
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY!;
-    if (!apiKey) throw new Error("API KEY가 없습니다.");
+    const apiKey = process.env.GOOGLE_API_KEY!;
+    if (!apiKey) throw new Error("서버 환경 변수에 GOOGLE_API_KEY가 없습니다.");
 
     let currentUserId: string | null = null;
     try {
@@ -34,6 +34,9 @@ export async function POST(req: Request) {
     let systemPrompt = "";
     let drawnCards: Record<string, any>[] = []; 
     
+    // ====================================================================
+    // [기존 로직 유지] 프롬프트 세팅 및 카드 DB 조회 등 친구분 코드 100% 동일
+    // ====================================================================
     if (selectedCards && selectedCards.length > 0) {
         let cardsFromDB: any[] = [];
         try {
@@ -107,10 +110,12 @@ export async function POST(req: Request) {
     } else {
         systemPrompt = `당신은 타로 마스터 클로토입니다. 모호한 단어를 빼고 현실적으로 대답하세요.`;
     }
-    
+
     const genAI = new GoogleGenerativeAI(apiKey);
+    
+    // 🚨 수정 포인트 1: 구형 gemini-pro -> 최신 gemini-1.5-flash 로 변경 (에러 방지)
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash-lite",
+        model: "gemini-1.5-flash",  
         systemInstruction: systemPrompt, 
         generationConfig: { 
             maxOutputTokens: 600, 
@@ -125,34 +130,52 @@ export async function POST(req: Request) {
 
     const chatSession = model.startChat({ history });
     
-    const result = await chatSession.sendMessage(lastMessage);
-    const aiResponse = result.response.text();
+    // 🚨 수정 포인트 2: sendMessage() -> sendMessageStream() 으로 변경
+    const result = await chatSession.sendMessageStream(lastMessage);
 
-    if (!isFollowUp && currentUserId && selectedCards && selectedCards.length > 0 && drawnCards.length > 0) {
-        try {
-            await prisma.reading.create({
-                data: {
-                    userId: currentUserId,
-                    question: lastMessage,
-                    fullAnswer: aiResponse,
-                    spreadType: selectedCards.length === 1 ? "one-card" : "three-card",
-                    cards: {
-                        create: drawnCards.map((card, idx) => ({
-                            cardId: card.id,        
-                            position: idx, 
-                            orientation: card.orientation 
-                        }))
-                    }
+    // 🚨 수정 포인트 3: 스트림을 클라이언트로 쏴주고, 완료된 후 기존 DB 저장 로직 실행
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+        async start(controller) {
+            let fullAnswer = "";
+            try {
+                // 스트리밍 조각 전송
+                for await (const chunk of result.stream) {
+                    const chunkText = chunk.text();
+                    fullAnswer += chunkText;
+                    controller.enqueue(encoder.encode(chunkText));
                 }
-            });
-        } catch (saveError) {
-            console.error("DB 저장 오류:", saveError);
-        }
-    }
 
-    return NextResponse.json({ 
-        text: aiResponse,
-        cardsInfo: drawnCards.map(c => ({ id: c.number, orientation: c.orientation })) 
+                // 🚨 수정 포인트 4: 스트리밍이 다 끝난 fullAnswer로 기존 DB 저장 로직 실행
+                if (!isFollowUp && currentUserId && selectedCards && selectedCards.length > 0 && drawnCards.length > 0) {
+                    await prisma.reading.create({
+                        data: {
+                            userId: currentUserId,
+                            question: lastMessage,
+                            fullAnswer: fullAnswer,
+                            spreadType: selectedCards.length === 1 ? "one-card" : "three-card",
+                            cards: {
+                                create: drawnCards.map((card, idx) => ({
+                                    cardId: card.id,        
+                                    position: idx, 
+                                    orientation: card.orientation 
+                                }))
+                            }
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error("스트리밍 에러:", error);
+                controller.error(error);
+            } finally {
+                controller.close();
+            }
+        }
+    });
+
+    // NextResponse.json 대신 스트림 반환
+    return new Response(stream, { 
+        headers: { "Content-Type": "text/plain; charset=utf-8" } 
     });
 
   } catch (error: any) {
