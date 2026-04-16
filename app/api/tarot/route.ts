@@ -107,10 +107,9 @@ export async function POST(req: Request) {
     } else {
         systemPrompt = `당신은 타로 마스터 클로토입니다. 모호한 단어를 빼고 현실적으로 대답하세요.`;
     }
-
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash-latest",  // ✅ 변경
+    model: "gemini-pro",  // ✅ 0.24.1에서 지원하는 유일한 무료 모델
     systemInstruction: systemPrompt, 
     generationConfig: { 
         maxOutputTokens: 600, 
