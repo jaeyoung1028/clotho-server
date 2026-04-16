@@ -110,13 +110,13 @@ export async function POST(req: Request) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash", 
-        systemInstruction: systemPrompt, 
-        generationConfig: { 
-            maxOutputTokens: 600, 
-            temperature: 0.7
-        } 
-    });
+    model: "gemini-1.5-flash-latest",  // ✅ 변경
+    systemInstruction: systemPrompt, 
+    generationConfig: { 
+        maxOutputTokens: 600, 
+        temperature: 0.7
+    } 
+});
 
     const history = messages.slice(0, -1).map((m: { role: string; content: string }) => ({
         role: m.role === 'user' ? 'user' : 'model',
