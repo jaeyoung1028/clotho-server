@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     
     const isFollowUp = messages.length > 1;
     
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY!;
+    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY!;  // ✅ 변경됨
     if (!apiKey) throw new Error("API KEY가 없습니다.");
 
     let currentUserId: string | null = null;
@@ -32,19 +32,19 @@ export async function POST(req: Request) {
     }
 
     let systemPrompt = "";
-    let drawnCards: Record<string, any>[] = []; 
-    
+    let drawnCards: Record<string, any>[] = [];
+
     if (selectedCards && selectedCards.length > 0) {
         let cardsFromDB: any[] = [];
         try {
             cardsFromDB = await prisma.tarotCard.findMany({
-                where: { number: { in: selectedCards.map(Number) } } 
+                where: { number: { in: selectedCards.map(Number) } }
             });
         } catch (cardDbError) {
             throw new Error("카드 목록 에러: DB에서 카드를 불러오지 못했습니다.");
         }
 
-        const orderedCardsFromDB = selectedCards.map((num: number) => 
+        const orderedCardsFromDB = selectedCards.map((num: number) =>
             cardsFromDB.find((c) => c.number === Number(num))
         ).filter(Boolean);
 
@@ -53,16 +53,16 @@ export async function POST(req: Request) {
         }
 
         drawnCards = orderedCardsFromDB.map((card: any) => {
-            const isReversed = Math.random() < 0.5; 
+            const isReversed = Math.random() < 0.5;
             return {
                 ...card,
                 orientation: isReversed ? "reversed" : "upright",
-                directionName: isReversed ? "역방향" : "정방향",   
-                currentMeaning: isReversed && card.meaningRev ? card.meaningRev : card.meaningUp 
+                directionName: isReversed ? "역방향" : "정방향",
+                currentMeaning: isReversed && card.meaningRev ? card.meaningRev : card.meaningUp
             };
         });
 
-        const cardInfoText = drawnCards.map((card, index) => 
+        const cardInfoText = drawnCards.map((card, index) =>
             `${index + 1}번째 카드: ${card.nameKo} (${card.name}) - [${card.directionName}]\n- 원래 의미: ${card.currentMeaning}`
         ).join("\n\n");
 
@@ -109,13 +109,13 @@ export async function POST(req: Request) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash-lite",
-        systemInstruction: systemPrompt, 
-        generationConfig: { 
-            maxOutputTokens: 600, 
+    const model = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash-lite",  // ✅ 변경됨
+        systemInstruction: systemPrompt,
+        generationConfig: {
+            maxOutputTokens: 600,
             temperature: 0.7
-        } 
+        }
     });
 
     const history = messages.slice(0, -1).map((m: { role: string; content: string }) => ({
@@ -138,9 +138,9 @@ export async function POST(req: Request) {
                     spreadType: selectedCards.length === 1 ? "one-card" : "three-card",
                     cards: {
                         create: drawnCards.map((card, idx) => ({
-                            cardId: card.id,        
-                            position: idx, 
-                            orientation: card.orientation 
+                            cardId: card.id,
+                            position: idx,
+                            orientation: card.orientation
                         }))
                     }
                 }
@@ -150,9 +150,9 @@ export async function POST(req: Request) {
         }
     }
 
-    return NextResponse.json({ 
+    return NextResponse.json({
         text: aiResponse,
-        cardsInfo: drawnCards.map(c => ({ id: c.number, orientation: c.orientation })) 
+        cardsInfo: drawnCards.map(c => ({ id: c.number, orientation: c.orientation }))
     });
 
   } catch (error: any) {
@@ -163,7 +163,7 @@ export async function POST(req: Request) {
 
 export async function GET() {
     return NextResponse.json(
-        { error: "잘못된 요청 방식입니다. 해석을 보려면 POST 요청이 필요합니다." }, 
+        { error: "잘못된 요청 방식입니다. 해석을 보려면 POST 요청이 필요합니다." },
         { status: 405 }
     );
 }
