@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     
     const isFollowUp = messages.length > 1;
     
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY!;  // ✅ 변경됨
+    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY!;
     if (!apiKey) throw new Error("API KEY가 없습니다.");
 
     let currentUserId: string | null = null;
@@ -63,44 +63,59 @@ export async function POST(req: Request) {
         });
 
         const cardInfoText = drawnCards.map((card, index) =>
-            `${index + 1}번째 카드: ${card.nameKo} (${card.name}) - [${card.directionName}]\n- 원래 의미: ${card.currentMeaning}`
+            `${index + 1}번째 카드: ${card.nameKo} (${card.name}) - [${card.directionName}]\n의미: ${card.currentMeaning}`
         ).join("\n\n");
 
         const isSingleCard = selectedCards.length === 1;
 
         if (isFollowUp) {
             systemPrompt = `
-            [역할] 타로 마스터 '클로토(Clotho)'.
-            [규칙] 현실적인 단어로 최대 3문장 이내로 답변하고, 마지막은 1줄 축복으로 끝내세요.
+[역할] 타로 마스터 '클로토(Clotho)'.
+[규칙] 현실적인 단어로 최대 3문장 이내로 답변하고, 마지막은 1줄 축복으로 끝내세요.
+
+[절대 금지 사항]
+- 카드의 의미를 사전처럼 나열하지 마시오.
+- 추상적이고 모호한 표현을 사용하지 마시오.
+- 반드시 내담자의 질문에 대한 직접적인 대답으로 문장을 마무리하시오.
             `;
         } else {
             if (isSingleCard) {
                 systemPrompt = `
-                [역할] 타로 마스터 '클로토'. 추상적인 표현을 배제하고 직관적인 단어만 사용합니다.
+[역할] 타로 마스터 '클로토'. 추상적인 표현을 배제하고 직관적인 단어만 사용합니다.
 
-                [🔥절대 규칙🔥]
-                1. 첫 문장은 "그대의 질문에 대한 답은 Yes(또는 No)입니다."
-                2. [여신의 해석]: 팩트와 행동 지침 딱 2~3문장.
-                3. [여신의 축복]: 응원 딱 1문장.
+[절대 규칙]
+1. 첫 문장은 "그대의 질문에 대한 답은 Yes(또는 No)입니다."
+2. [여신의 해석]: 팩트와 행동 지침 딱 2~3문장.
+3. [여신의 축복]: 응원 딱 1문장.
 
-                ---
-                사용자가 뽑은 카드:
-                ${cardInfoText}
-                `;
+[절대 금지 사항]
+- 카드의 의미를 사전처럼 나열하지 마시오.
+- 추상적이고 모호한 표현을 사용하지 마시오.
+- 반드시 내담자의 질문에 대한 직접적인 대답으로 문장을 마무리하시오.
+
+---
+사용자가 뽑은 카드:
+${cardInfoText}
+            `;
             } else {
                 systemPrompt = `
-                [역할] 타로 마스터 '클로토'. 추상적인 단어를 배제하고 현실적이고 직관적인 단어만 사용하여 분석합니다.
+[역할] 타로 마스터 '클로토'. 추상적인 단어를 배제하고 현실적이고 직관적인 단어만 사용하여 분석합니다.
 
-                [🔥절대 규칙🔥]
-                1. 3장의 카드를 [과거 - 현재 - 미래] 시간선으로 배정하세요.
-                2. [여신의 해석]: 각 카드의 해석은 반드시 "2~3문장"으로 명확한 팩트와 서사만 전달하세요.
-                3. [여신의 최종 신탁]: 내담자가 읽을 때 피로감을 느끼지 않도록, 전체 흐름을 관통하는 핵심 조언만 "최대 3문장" 이내로 임팩트 있고 간결하게 작성하세요.
-                4. [여신의 축복]: 무조건 "딱 1문장"으로 마무리하세요.
+[절대 규칙]
+1. 3장의 카드를 [과거 - 현재 - 미래] 시간선으로 배정하세요.
+2. [여신의 해석]: 각 카드의 해석은 반드시 "2~3문장"으로 명확한 팩트와 서사만 전달하세요.
+3. [여신의 최종 신탁]: 내담자가 읽을 때 피로감을 느끼지 않도록, 전체 흐름을 관통하는 핵심 조언만 "최대 3문장" 이내로 작성하세요.
+4. [여신의 축복]: 무조건 "딱 1문장"으로 마무리하세요.
 
-                ---
-                사용자가 뽑은 카드:
-                ${cardInfoText}
-                `;
+[절대 금지 사항]
+- 카드의 의미를 사전처럼 나열하지 마시오.
+- 추상적이고 모호한 표현을 사용하지 마시오.
+- 반드시 내담자의 질문에 대한 직접적인 대답으로 문장을 마무리하시오.
+
+---
+사용자가 뽑은 카드:
+${cardInfoText}
+            `;
             }
         }
 
@@ -110,7 +125,7 @@ export async function POST(req: Request) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash-lite",  // ✅ 변경됨
+        model: "gemini-2.5-flash-lite",
         systemInstruction: systemPrompt,
         generationConfig: {
             maxOutputTokens: 600,
@@ -151,9 +166,9 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({
-    text: aiResponse,
-    cards: drawnCards.map(c => ({ id: c.number, orientation: c.orientation }))
-});
+        text: aiResponse,
+        cards: drawnCards.map(c => ({ id: c.number, orientation: c.orientation }))
+    });
 
   } catch (error: any) {
     console.error("에러:", error);
