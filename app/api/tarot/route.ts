@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     
     const isFollowUp = messages.length > 1;
     
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY!;
+    const apiKey = process.env.GOOGLE_API_KEY!;
     if (!apiKey) throw new Error("API KEY가 없습니다.");
 
     let currentUserId: string | null = null;
