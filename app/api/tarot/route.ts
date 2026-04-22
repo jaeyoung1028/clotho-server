@@ -151,9 +151,9 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({
-        text: aiResponse,
-        cardsInfo: drawnCards.map(c => ({ id: c.number, orientation: c.orientation }))
-    });
+    text: aiResponse,
+    cards: drawnCards.map(c => ({ id: c.number, orientation: c.orientation }))
+});
 
   } catch (error: any) {
     console.error("에러:", error);
