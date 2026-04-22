@@ -12,7 +12,13 @@ export async function POST(req: Request) {
     }
 
     const messages = body.messages || [{ role: "user", content: "내 운명을 알려다오." }];
-    const selectedCards = body.selectedCards || body.cards || body.cardIds || [];
+    let selectedCards = body.selectedCards || body.cards || body.cardIds || [];
+    
+    // ✅ 객체 배열 형식 지원: [{index: 5, isReversed: true}, ...] → [5, 10, 23]
+    if (selectedCards.length > 0 && typeof selectedCards[0] === 'object' && 'index' in selectedCards[0]) {
+      selectedCards = selectedCards.map((card: any) => card.index);
+    }
+    
     const lastMessage = messages[messages.length - 1].content;
     
     const isFollowUp = messages.length > 1;
