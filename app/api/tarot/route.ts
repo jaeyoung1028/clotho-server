@@ -171,10 +171,17 @@ ${cardInfoText}
         }
     }
 
-    return NextResponse.json({
-        text: aiResponse,
-        cards: drawnCards.map(c => ({ id: c.number, orientation: c.orientation }))
-    });
+    // 📌 응답 직전 디버깅 로그
+    const responsePayload = {
+      text: aiResponse,
+      cards: drawnCards.map(c => ({ id: c.number, orientation: c.orientation }))
+    };
+    
+    console.log("📤 서버 응답 직전:", JSON.stringify(responsePayload, null, 2));
+    console.log("📤 응답 타입:", typeof responsePayload);
+    console.log("📤 aiResponse 길이:", aiResponse.length);
+
+    return NextResponse.json(responsePayload);
 
   } catch (error: any) {
     console.error("에러:", error);
