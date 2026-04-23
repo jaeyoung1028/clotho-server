@@ -146,8 +146,15 @@ ${cardInfoText}
 
     const chatSession = model.startChat({ history });
     
+    console.log("⏳ Gemini API 호출 직전 - lastMessage:", lastMessage);
+    
     const result = await chatSession.sendMessage(lastMessage);
     const aiResponse = result.response.text();
+
+    console.log("✅ Gemini API 응답 받음");
+    console.log("📤 aiResponse 타입:", typeof aiResponse);
+    console.log("📤 aiResponse 길이:", aiResponse.length);
+    console.log("📤 aiResponse 첫 100자:", aiResponse.substring(0, 100));
 
     if (!isFollowUp && currentUserId && selectedCards && selectedCards.length > 0 && drawnCards.length > 0) {
         try {
@@ -166,6 +173,7 @@ ${cardInfoText}
                     }
                 }
             });
+            console.log("✅ DB에 reading 저장 완료");
         } catch (saveError) {
             console.error("DB 저장 오류:", saveError);
         }
@@ -177,14 +185,22 @@ ${cardInfoText}
       cards: drawnCards.map(c => ({ id: c.number, orientation: c.orientation }))
     };
     
-    console.log("📤 서버 응답 직전:", JSON.stringify(responsePayload, null, 2));
-    console.log("📤 응답 타입:", typeof responsePayload);
-    console.log("📤 aiResponse 길이:", aiResponse.length);
+    console.log("📤 서버 응답 직전 - 전체 payload:", JSON.stringify(responsePayload, null, 2));
+    console.log("📤 응답 타입 (responsePayload):", typeof responsePayload);
+    console.log("📤 응답 타입 (text 필드):", typeof responsePayload.text);
+    console.log("🚀 NextResponse.json 호출 중...");
 
-    return NextResponse.json(responsePayload);
+    const response = NextResponse.json(responsePayload);
+    
+    console.log("✅ NextResponse 생성 완료");
+    console.log("📤 응답 헤더:", response.headers.get('content-type'));
+
+    return response;
 
   } catch (error: any) {
-    console.error("에러:", error);
+    console.error("❌ 에러 발생:", error);
+    console.error("❌ 에러 메시지:", error.message);
+    console.error("❌ 에러 스택:", error.stack);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
