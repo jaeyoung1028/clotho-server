@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     const userQuestion = lastUserMessage.content;
     console.log(`✅ [${requestId}] 사용자 질문: "${userQuestion}"`);
 
-    // ✅ 4️⃣ DB에서 카드 정보 조회
+    // ✅ 4️⃣ DB에서 카드 정보 조회 (순서 변경! 프롬프트 작성 전에)
     console.log(`🎴 [${requestId}] DB에서 카드 정보 조회 중...`);
 
     // selectedCards의 index 배열 추출
