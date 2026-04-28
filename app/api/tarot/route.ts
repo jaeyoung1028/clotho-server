@@ -1,3 +1,5 @@
+// app/api/tarot/route.ts
+
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -179,15 +181,22 @@ ${cardInfoText}
         }
     }
 
-    // 📌 응답 직전 디버깅 로그
+    // ⭐ 수정된 부분: 카드 정보 추가
     const responsePayload = {
       text: aiResponse,
-      cards: drawnCards.map(c => ({ id: c.number, orientation: c.orientation }))
+      cards: drawnCards.map(c => ({
+        id: c.id,
+        number: c.number,
+        name: c.name,
+        nameKo: c.nameKo,
+        imageUrl: c.imageUrl || `/images/tarot/${c.number}_${c.name?.toLowerCase().replace(/\s+/g, '_')}.png`,
+        orientation: c.orientation,
+        isReversed: c.orientation === 'reversed'
+      }))
     };
     
     console.log("📤 서버 응답 직전 - 전체 payload:", JSON.stringify(responsePayload, null, 2));
-    console.log("📤 응답 타입 (responsePayload):", typeof responsePayload);
-    console.log("📤 응답 타입 (text 필드):", typeof responsePayload.text);
+    console.log("📤 카드 정보:", responsePayload.cards);
     console.log("🚀 NextResponse.json 호출 중...");
 
     const response = NextResponse.json(responsePayload);
