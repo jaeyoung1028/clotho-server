@@ -181,7 +181,7 @@ ${cardInfoText}
         }
     }
 
-    // ⭐ 수정된 부분: 카드 정보 추가
+    // ⭐ 수정된 부분: DB의 imageUrl을 그대로 사용
     const responsePayload = {
       text: aiResponse,
       cards: drawnCards.map(c => ({
@@ -189,13 +189,14 @@ ${cardInfoText}
         number: c.number,
         name: c.name,
         nameKo: c.nameKo,
-        imageUrl: c.imageUrl || `/images/tarot/${c.number}_${c.name?.toLowerCase().replace(/\s+/g, '_')}.png`,
+        imageUrl: c.imageUrl,  // DB의 imageUrl 그대로 사용
         orientation: c.orientation,
         isReversed: c.orientation === 'reversed'
       }))
     };
     
-    console.log("📤 서버 응답 직전 - 전체 payload:", JSON.stringify(responsePayload, null, 2));
+    console.log("📤 responsePayload 타입:", typeof responsePayload);
+    console.log("📤 responsePayload:", JSON.stringify(responsePayload, null, 2).substring(0, 500));
     console.log("📤 카드 정보:", responsePayload.cards);
     console.log("🚀 NextResponse.json 호출 중...");
 
