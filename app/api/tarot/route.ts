@@ -16,9 +16,12 @@ export async function POST(req: Request) {
     const messages = body.messages || [{ role: "user", content: "내 운명을 알려다오." }];
     let selectedCards = body.selectedCards || body.cards || body.cardIds || [];
     
+    console.log("📥 요청 받은 selectedCards (원본):", JSON.stringify(selectedCards, null, 2));
+    
     // ✅ 객체 배열 형식 지원: [{index: 5, isReversed: true}, ...] → [5, 10, 23]
     if (selectedCards.length > 0 && typeof selectedCards[0] === 'object' && 'index' in selectedCards[0]) {
       selectedCards = selectedCards.map((card: any) => card.index);
+      console.log("📥 변환된 selectedCards:", selectedCards);
     }
     
     const lastMessage = messages[messages.length - 1].content;
@@ -45,9 +48,15 @@ export async function POST(req: Request) {
     if (selectedCards && selectedCards.length > 0) {
         let cardsFromDB: any[] = [];
         try {
+            console.log("🔍 DB에서 조회할 카드 번호들:", selectedCards.map(Number));
+            
             cardsFromDB = await prisma.tarotCard.findMany({
                 where: { number: { in: selectedCards.map(Number) } }
             });
+            
+            console.log("🔍 DB에서 찾은 카드들 (개수):", cardsFromDB.length);
+            console.log("🔍 DB에서 찾은 카드들 (상세):", JSON.stringify(cardsFromDB.map(c => ({ number: c.number, name: c.name, nameKo: c.nameKo, imageUrl: c.imageUrl })), null, 2));
+            
         } catch (cardDbError) {
             throw new Error("카드 목록 에러: DB에서 카드를 불러오지 못했습니다.");
         }
@@ -55,6 +64,9 @@ export async function POST(req: Request) {
         const orderedCardsFromDB = selectedCards.map((num: number) =>
             cardsFromDB.find((c) => c.number === Number(num))
         ).filter(Boolean);
+
+        console.log("🔍 정렬된 카드들 (개수):", orderedCardsFromDB.length);
+        console.log("🔍 정렬된 카드들 (상세):", JSON.stringify(orderedCardsFromDB.map((c: any) => ({ number: c.number, name: c.name, nameKo: c.nameKo })), null, 2));
 
         if (orderedCardsFromDB.length === 0) {
             throw new Error("뽑힌 카드가 데이터베이스에 존재하지 않습니다.");
@@ -69,6 +81,9 @@ export async function POST(req: Request) {
                 currentMeaning: isReversed && card.meaningRev ? card.meaningRev : card.meaningUp
             };
         });
+
+        console.log("🎴 drawnCards 생성됨 (개수):", drawnCards.length);
+        console.log("🎴 drawnCards 상세:", JSON.stringify(drawnCards.map((c: any) => ({ number: c.number, name: c.name, nameKo: c.nameKo, imageUrl: c.imageUrl, orientation: c.orientation })), null, 2));
 
         const cardInfoText = drawnCards.map((card, index) =>
             `${index + 1}번째 카드: ${card.nameKo} (${card.name}) - [${card.directionName}]\n의미: ${card.currentMeaning}`
@@ -181,15 +196,15 @@ ${cardInfoText}
         }
     }
 
-    // ⭐ 수정된 부분: DB의 imageUrl을 그대로 사용
+    // ⭐ 수정된 부분: 타입 명시 추가
     const responsePayload = {
       text: aiResponse,
-      cards: drawnCards.map(c => ({
+      cards: drawnCards.map((c: any) => ({
         id: c.id,
         number: c.number,
         name: c.name,
         nameKo: c.nameKo,
-        imageUrl: c.imageUrl,  // DB의 imageUrl 그대로 사용
+        imageUrl: c.imageUrl,
         orientation: c.orientation,
         isReversed: c.orientation === 'reversed'
       }))
@@ -197,7 +212,7 @@ ${cardInfoText}
     
     console.log("📤 responsePayload 타입:", typeof responsePayload);
     console.log("📤 responsePayload:", JSON.stringify(responsePayload, null, 2).substring(0, 500));
-    console.log("📤 카드 정보:", responsePayload.cards);
+    console.log("📤 카드 정보:", JSON.stringify(responsePayload.cards, null, 2));
     console.log("🚀 NextResponse.json 호출 중...");
 
     const response = NextResponse.json(responsePayload);
