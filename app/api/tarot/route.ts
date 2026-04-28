@@ -125,28 +125,37 @@ export async function POST(req: NextRequest) {
     console.log(JSON.stringify(cards, null, 2));
     console.log();
 
-    // ✅ 7️⃣ 프롬프트 생성
+    // ✅ 7️⃣ 프롬프트 생성 (수정됨!)
     console.log(`✅ [${requestId}] 7️⃣ 프롬프트 생성 중`);
 
     const systemPrompt = `당신은 신비로운 타로 카드 해석가입니다. 
-    사용자의 질문에 대해 깊이 있고 영감을 주는 타로 해석을 제공하세요.
-    타로 카드의 상징성과 의미를 활용하여 사용자의 인생 경로를 조명해주세요.
-    응답은 한국어로 하며, 신비로운 분위기를 유지하세요.`;
+
+사용자가 선택한 카드들의 정보가 주어졌습니다.
+반드시 이 카드들만 사용하여 해석하세요.
+예시나 다른 카드는 절대 언급하지 마세요.
+
+사용자의 질문에 대해 깊이 있고 영감을 주는 타로 해석을 제공하세요.
+응답은 한국어로 하며, 신비로운 분위기를 유지하세요.`;
 
     const cardDescriptions = cards.map((c: any) => {
       const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
-      return `Position ${c.position}: ${c.nameKo}(${c.name}) - ${c.orientation === 'reversed' ? '역방향' : '정방향'}
+      return `카드 ${c.position}: ${c.nameKo}(${c.name}) [${c.orientation === 'reversed' ? '역방향' : '정방향'}]
 의미: ${meaning}`;
-    }).join('\n\n');
+    }).join('\n');
 
     const userPrompt = `${systemPrompt}
 
-**사용자가 뽑은 카드:**
+【선택된 카드】
 ${cardDescriptions}
 
-**사용자 질문:** ${userQuestion}
+【질문】
+${userQuestion}
 
-위의 카드들과 그 의미를 고려하여 사용자의 질문에 대한 깊이 있는 타로 해석을 제공해주세요.`;
+【지시사항】
+- 위의 카드들만 사용하여 해석하세요
+- 절대 예시 카드를 언급하지 마세요
+- 각 카드의 의미를 직접 적용하세요
+- 사용자의 질문에 대한 구체적인 해석을 제공하세요`;
 
     console.log(`  ✓ systemPrompt 길이: ${systemPrompt.length} 자`);
     console.log(`  ✓ cardDescriptions:\n${cardDescriptions}`);
