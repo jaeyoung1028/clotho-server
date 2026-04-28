@@ -107,7 +107,9 @@ export async function POST(req: NextRequest) {
         imageUrl: dbCard?.imageUrl || '',
         orientation: selection.isReversed ? 'reversed' : 'upright',
         isReversed: selection.isReversed || false,
-        position: index + 1
+        position: index + 1,
+        meaningUp: dbCard?.meaningUp || '',
+        meaningRev: dbCard?.meaningRev || ''
       };
     }) || [];
 
@@ -116,7 +118,7 @@ export async function POST(req: NextRequest) {
       console.log(`  - Position ${c.position}: ${c.nameKo} (${c.orientation})`);
     });
 
-    // ✅ 6️⃣ 프롬프트 작성 (카드 정보 포함) - 수정됨!
+    // ✅ 6️⃣ 프롬프트 작성 (카드 정보 + 의미 포함) - 수정됨!
     console.log(`📝 [${requestId}] 프롬프트 작성 중...`);
 
     const systemPrompt = `당신은 신비로운 타로 카드 해석가입니다. 
@@ -124,12 +126,21 @@ export async function POST(req: NextRequest) {
     타로 카드의 상징성과 의미를 활용하여 사용자의 인생 경로를 조명해주세요.
     응답은 한국어로 하며, 신비로운 분위기를 유지하세요.`;
 
-    // ✅ 카드 정보를 프롬프트에 포함
-    const cardDescriptions = cards.map((c: any) => 
-      `${c.position}번 카드: ${c.nameKo}(${c.name}) - ${c.orientation === 'reversed' ? '역방향' : '정방향'}`
-    ).join('\n');
+    // ⭐ 카드 정보 + 의미를 프롬프트에 포함
+    const cardDescriptions = cards.map((c: any) => {
+      const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
+      return `Position ${c.position}: ${c.nameKo}(${c.name}) - ${c.orientation === 'reversed' ? '역방향' : '정방향'}
+의미: ${meaning}`;
+    }).join('\n\n');
 
-    const userPrompt = `${systemPrompt}\n\n선택된 카드들:\n${cardDescriptions}\n\n사용자 질문: ${userQuestion}`;
+    const userPrompt = `${systemPrompt}
+
+**사용자가 뽑은 카드:**
+${cardDescriptions}
+
+**사용자 질문:** ${userQuestion}
+
+위의 카드들과 그 의미를 고려하여 사용자의 질문에 대한 깊이 있는 타로 해석을 제공해주세요.`;
 
     console.log(`✅ [${requestId}] 프롬프트 길이: ${userPrompt.length} 자`);
     console.log(`✅ [${requestId}] 카드 정보 포함됨:`);
