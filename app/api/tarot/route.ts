@@ -1,238 +1,211 @@
 // app/api/tarot/route.ts
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { NextRequest, NextResponse } from 'next/server';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { PrismaClient } from '@prisma/client';
 
-export async function POST(req: Request) {
+const prisma = new PrismaClient();
+
+// ✅ 수정됨: NEXT_PUBLIC_GEMINI_API_KEY 사용
+const genAI = new GoogleGenerativeAI(process.env.NEXT_PUBLIC_GEMINI_API_KEY!);
+
+// ============ GET: 타로 카드 조회 ============
+export async function GET() {
   try {
-    let body: any = {};
-    try {
-      body = await req.json();
-    } catch (e) {
-      body = {};
-    }
-
-    const messages = body.messages || [{ role: "user", content: "내 운명을 알려다오." }];
-    let selectedCards = body.selectedCards || body.cards || body.cardIds || [];
-    
-    console.log("📥 요청 받은 selectedCards (원본):", JSON.stringify(selectedCards, null, 2));
-    
-    // ✅ 객체 배열 형식 지원: [{index: 5, isReversed: true}, ...] → [5, 10, 23]
-    if (selectedCards.length > 0 && typeof selectedCards[0] === 'object' && 'index' in selectedCards[0]) {
-      selectedCards = selectedCards.map((card: any) => card.index);
-      console.log("📥 변환된 selectedCards:", selectedCards);
-    }
-    
-    const lastMessage = messages[messages.length - 1].content;
-    
-    const isFollowUp = messages.length > 1;
-    
-    const apiKey = process.env.GOOGLE_API_KEY!;
-    if (!apiKey) throw new Error("API KEY가 없습니다.");
-
-    let currentUserId: string | null = null;
-    try {
-        let testUser = await prisma.user.findFirst({ where: { name: "TestGuest" } });
-        if (!testUser) {
-            testUser = await prisma.user.create({ data: { name: "TestGuest", email: "guest@example.com" } });
-        }
-        currentUserId = testUser.id;
-    } catch (dbError) {
-        console.error("유저 조회/생성 실패:", dbError);
-    }
-
-    let systemPrompt = "";
-    let drawnCards: Record<string, any>[] = [];
-
-    if (selectedCards && selectedCards.length > 0) {
-        let cardsFromDB: any[] = [];
-        try {
-            console.log("🔍 DB에서 조회할 카드 번호들:", selectedCards.map(Number));
-            
-            cardsFromDB = await prisma.tarotCard.findMany({
-                where: { number: { in: selectedCards.map(Number) } }
-            });
-            
-            console.log("🔍 DB에서 찾은 카드들 (개수):", cardsFromDB.length);
-            console.log("🔍 DB에서 찾은 카드들 (상세):", JSON.stringify(cardsFromDB.map(c => ({ number: c.number, name: c.name, nameKo: c.nameKo, imageUrl: c.imageUrl })), null, 2));
-            
-        } catch (cardDbError) {
-            throw new Error("카드 목록 에러: DB에서 카드를 불러오지 못했습니다.");
-        }
-
-        const orderedCardsFromDB = selectedCards.map((num: number) =>
-            cardsFromDB.find((c) => c.number === Number(num))
-        ).filter(Boolean);
-
-        console.log("🔍 정렬된 카드들 (개수):", orderedCardsFromDB.length);
-        console.log("🔍 정렬된 카드들 (상세):", JSON.stringify(orderedCardsFromDB.map((c: any) => ({ number: c.number, name: c.name, nameKo: c.nameKo })), null, 2));
-
-        if (orderedCardsFromDB.length === 0) {
-            throw new Error("뽑힌 카드가 데이터베이스에 존재하지 않습니다.");
-        }
-
-        drawnCards = orderedCardsFromDB.map((card: any) => {
-            const isReversed = Math.random() < 0.5;
-            return {
-                ...card,
-                orientation: isReversed ? "reversed" : "upright",
-                directionName: isReversed ? "역방향" : "정방향",
-                currentMeaning: isReversed && card.meaningRev ? card.meaningRev : card.meaningUp
-            };
-        });
-
-        console.log("🎴 drawnCards 생성됨 (개수):", drawnCards.length);
-        console.log("🎴 drawnCards 상세:", JSON.stringify(drawnCards.map((c: any) => ({ number: c.number, name: c.name, nameKo: c.nameKo, imageUrl: c.imageUrl, orientation: c.orientation })), null, 2));
-
-        const cardInfoText = drawnCards.map((card, index) =>
-            `${index + 1}번째 카드: ${card.nameKo} (${card.name}) - [${card.directionName}]\n의미: ${card.currentMeaning}`
-        ).join("\n\n");
-
-        const isSingleCard = selectedCards.length === 1;
-
-        if (isFollowUp) {
-            systemPrompt = `
-[역할] 타로 마스터 '클로토(Clotho)'.
-[규칙] 현실적인 단어로 최대 3문장 이내로 답변하고, 마지막은 1줄 축복으로 끝내세요.
-
-[절대 금지 사항]
-- 카드의 의미를 사전처럼 나열하지 마시오.
-- 추상적이고 모호한 표현을 사용하지 마시오.
-- 반드시 내담자의 질문에 대한 직접적인 대답으로 문장을 마무리하시오.
-            `;
-        } else {
-            if (isSingleCard) {
-                systemPrompt = `
-[역할] 타로 마스터 '클로토'. 추상적인 표현을 배제하고 직관적인 단어만 사용합니다.
-
-[절대 규칙]
-1. 첫 문장은 "그대의 질문에 대한 답은 Yes(또는 No)입니다."
-2. [여신의 해석]: 팩트와 행동 지침 딱 2~3문장.
-3. [여신의 축복]: 응원 딱 1문장.
-
-[절대 금지 사항]
-- 카드의 의미를 사전처럼 나열하지 마시오.
-- 추상적이고 모호한 표현을 사용하지 마시오.
-- 반드시 내담자의 질문에 대한 직접적인 대답으로 문장을 마무리하시오.
-
----
-사용자가 뽑은 카드:
-${cardInfoText}
-            `;
-            } else {
-                systemPrompt = `
-[역할] 타로 마스터 '클로토'. 추상적인 단어를 배제하고 현실적이고 직관적인 단어만 사용하여 분석합니다.
-
-[절대 규칙]
-1. 3장의 카드를 [과거 - 현재 - 미래] 시간선으로 배정하세요.
-2. [여신의 해석]: 각 카드의 해석은 반드시 "2~3문장"으로 명확한 팩트와 서사만 전달하세요.
-3. [여신의 최종 신탁]: 내담자가 읽을 때 피로감을 느끼지 않도록, 전체 흐름을 관통하는 핵심 조언만 "최대 3문장" 이내로 작성하세요.
-4. [여신의 축복]: 무조건 "딱 1문장"으로 마무리하세요.
-
-[절대 금지 사항]
-- 카드의 의미를 사전처럼 나열하지 마시오.
-- 추상적이고 모호한 표현을 사용하지 마시오.
-- 반드시 내담자의 질문에 대한 직접적인 대답으로 문장을 마무리하시오.
-
----
-사용자가 뽑은 카드:
-${cardInfoText}
-            `;
-            }
-        }
-
-    } else {
-        systemPrompt = `당신은 타로 마스터 클로토입니다. 모호한 단어를 빼고 현실적으로 대답하세요.`;
-    }
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash-lite",
-        systemInstruction: systemPrompt,
-        generationConfig: {
-            maxOutputTokens: 600,
-            temperature: 0.7
-        }
+    const cards = await prisma.tarotCard.findMany({
+      orderBy: { number: 'asc' }
     });
 
-    const history = messages.slice(0, -1).map((m: { role: string; content: string }) => ({
-        role: m.role === 'user' ? 'user' : 'model',
-        parts: [{ text: m.content }]
-    }));
-
-    const chatSession = model.startChat({ history });
-    
-    console.log("⏳ Gemini API 호출 직전 - lastMessage:", lastMessage);
-    
-    const result = await chatSession.sendMessage(lastMessage);
-    const aiResponse = result.response.text();
-
-    console.log("✅ Gemini API 응답 받음");
-    console.log("📤 aiResponse 타입:", typeof aiResponse);
-    console.log("📤 aiResponse 길이:", aiResponse.length);
-    console.log("📤 aiResponse 첫 100자:", aiResponse.substring(0, 100));
-
-    if (!isFollowUp && currentUserId && selectedCards && selectedCards.length > 0 && drawnCards.length > 0) {
-        try {
-            await prisma.reading.create({
-                data: {
-                    userId: currentUserId,
-                    question: lastMessage,
-                    fullAnswer: aiResponse,
-                    spreadType: selectedCards.length === 1 ? "one-card" : "three-card",
-                    cards: {
-                        create: drawnCards.map((card, idx) => ({
-                            cardId: card.id,
-                            position: idx,
-                            orientation: card.orientation
-                        }))
-                    }
-                }
-            });
-            console.log("✅ DB에 reading 저장 완료");
-        } catch (saveError) {
-            console.error("DB 저장 오류:", saveError);
-        }
-    }
-
-    // ⭐ 수정된 부분: 타입 명시 추가
-    const responsePayload = {
-      text: aiResponse,
-      cards: drawnCards.map((c: any) => ({
-        id: c.id,
-        number: c.number,
-        name: c.name,
-        nameKo: c.nameKo,
-        imageUrl: c.imageUrl,
-        orientation: c.orientation,
-        isReversed: c.orientation === 'reversed'
-      }))
-    };
-    
-    console.log("📤 responsePayload 타입:", typeof responsePayload);
-    console.log("📤 responsePayload:", JSON.stringify(responsePayload, null, 2).substring(0, 500));
-    console.log("📤 카드 정보:", JSON.stringify(responsePayload.cards, null, 2));
-    console.log("🚀 NextResponse.json 호출 중...");
-
-    const response = NextResponse.json(responsePayload);
-    
-    console.log("✅ NextResponse 생성 완료");
-    console.log("📤 응답 헤더:", response.headers.get('content-type'));
-
-    return response;
-
-  } catch (error: any) {
-    console.error("❌ 에러 발생:", error);
-    console.error("❌ 에러 메시지:", error.message);
-    console.error("❌ 에러 스택:", error.stack);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(cards);
+  } catch (error) {
+    console.error('카드 조회 에러:', error);
+    return NextResponse.json(
+      { error: '카드를 불러올 수 없습니다' },
+      { status: 500 }
+    );
   }
 }
 
-export async function GET() {
+// ============ POST: 타로 해석 (디버깅 로그 포함) ============
+export async function POST(req: NextRequest) {
+  const requestId = Date.now(); // 요청 추적용 ID
+
+  console.log(`\n🚀 [${requestId}] API 요청 시작`);
+  console.log("━".repeat(60));
+
+  try {
+    // ✅ 1️⃣ 요청 본문 파싱
+    console.log(`📋 [${requestId}] 요청 정보:`);
+    console.log(`  Method: ${req.method}`);
+    console.log(`  URL: ${req.url}`);
+
+    const { messages, selectedCards } = await req.json();
+
+    console.log(`\n📦 [${requestId}] 받은 데이터:`);
+    console.log(`  messages 길이: ${messages?.length}`);
+    console.log(`  selectedCards 길이: ${selectedCards?.length}`);
+    console.log(`  messages:`, JSON.stringify(messages).substring(0, 100));
+    console.log(`  selectedCards:`, JSON.stringify(selectedCards).substring(0, 100));
+
+    // ✅ 2️⃣ 데이터 검증
+    if (!messages || messages.length === 0) {
+      console.error(`❌ [${requestId}] messages가 비어있음`);
+      return NextResponse.json(
+        { error: '메시지가 필요합니다' },
+        { status: 400 }
+      );
+    }
+
+    // ✅ 3️⃣ 마지막 사용자 메시지 추출
+    const lastUserMessage = messages[messages.length - 1];
+    console.log(`💬 [${requestId}] 마지막 메시지:`, lastUserMessage);
+
+    if (lastUserMessage.role !== 'user') {
+      console.error(`❌ [${requestId}] 마지막 메시지가 user 역할이 아님`);
+      return NextResponse.json(
+        { error: '마지막 메시지는 사용자 메시지여야 합니다' },
+        { status: 400 }
+      );
+    }
+
+    const userQuestion = lastUserMessage.content;
+    console.log(`✅ [${requestId}] 사용자 질문: "${userQuestion}"`);
+
+    // ✅ 4️⃣ DB에서 카드 정보 조회
+    console.log(`🎴 [${requestId}] DB에서 카드 정보 조회 중...`);
+
+    // selectedCards의 index 배열 추출
+    const cardIndexes = selectedCards?.map((card: any) => card.index) || [];
+    console.log(`  조회할 카드 번호: ${cardIndexes}`);
+
+    // DB에서 해당 번호의 카드들 조회
+    const dbCards = await prisma.tarotCard.findMany({
+      where: {
+        number: { in: cardIndexes }
+      }
+    });
+
+    console.log(`✅ [${requestId}] DB에서 ${dbCards.length}개 카드 조회 완료`);
+    dbCards.forEach(c => {
+      console.log(`  - ${c.number}: ${c.nameKo} (${c.name})`);
+    });
+
+    // ✅ 5️⃣ 선택된 순서대로 카드 정보 매핑
+    const cards = selectedCards?.map((selection: any, index: number) => {
+      const dbCard = dbCards.find(c => c.number === selection.index);
+      
+      if (!dbCard) {
+        console.warn(`⚠️ [${requestId}] 카드 번호 ${selection.index} DB에서 없음`);
+      }
+
+      return {
+        id: dbCard?.id,
+        number: selection.index,
+        name: dbCard?.name || '알 수 없는 카드',
+        nameKo: dbCard?.nameKo || '',
+        image: dbCard?.imageUrl || '',
+        imageUrl: dbCard?.imageUrl || '',
+        orientation: selection.isReversed ? 'reversed' : 'upright',
+        isReversed: selection.isReversed || false,
+        position: index + 1
+      };
+    }) || [];
+
+    console.log(`✅ [${requestId}] 최종 카드 구성 완료:`);
+    cards.forEach((c: any) => {
+      console.log(`  - Position ${c.position}: ${c.nameKo} (${c.orientation})`);
+    });
+
+    // ✅ 6️⃣ 프롬프트 작성 (카드 정보 포함) - 수정됨!
+    console.log(`📝 [${requestId}] 프롬프트 작성 중...`);
+
+    const systemPrompt = `당신은 신비로운 타로 카드 해석가입니다. 
+    사용자의 질문에 대해 깊이 있고 영감을 주는 타로 해석을 제공하세요.
+    타로 카드의 상징성과 의미를 활용하여 사용자의 인생 경로를 조명해주세요.
+    응답은 한국어로 하며, 신비로운 분위기를 유지하세요.`;
+
+    // ✅ 카드 정보를 프롬프트에 포함
+    const cardDescriptions = cards.map((c: any) => 
+      `${c.position}번 카드: ${c.nameKo}(${c.name}) - ${c.orientation === 'reversed' ? '역방향' : '정방향'}`
+    ).join('\n');
+
+    const userPrompt = `${systemPrompt}\n\n선택된 카드들:\n${cardDescriptions}\n\n사용자 질문: ${userQuestion}`;
+
+    console.log(`✅ [${requestId}] 프롬프트 길이: ${userPrompt.length} 자`);
+    console.log(`✅ [${requestId}] 카드 정보 포함됨:`);
+    console.log(cardDescriptions);
+
+    // ✅ 7️⃣ Gemini API 키 확인
+    if (!process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
+      console.error(`❌ [${requestId}] API 키가 설정되지 않았습니다!`);
+      return NextResponse.json(
+        { error: 'API 키 설정 오류' },
+        { status: 500 }
+      );
+    }
+
+    console.log(`✅ [${requestId}] API 키 확인됨`);
+
+    // ✅ 8️⃣ Gemini API 호출
+    console.log(`🌐 [${requestId}] Gemini API 호출 시작...`);
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+    const result = await model.generateContent(userPrompt);
+    const aiResponse = result.response.text();
+
+    console.log(`✅ [${requestId}] Gemini API 응답 받음`);
+    console.log(`  응답 길이: ${aiResponse.length} 자`);
+    console.log(`  응답 첫 100자: ${aiResponse.substring(0, 100)}`);
+
+    // ✅ 9️⃣ 응답 페이로드 생성
+    console.log(`📤 [${requestId}] 응답 페이로드 생성 중...`);
+
+    const responsePayload = {
+      text: aiResponse,
+      cards: cards,
+      timestamp: new Date().toISOString()
+    };
+
+    console.log(`✅ [${requestId}] 응답 페이로드 준비 완료`);
+    console.log(`  text 길이: ${responsePayload.text.length}`);
+    console.log(`  cards 개수: ${responsePayload.cards.length}`);
+
+    // ✅ 1️⃣0️⃣ JSON 응답
+    console.log(`✅ [${requestId}] JSON 응답 전송`);
+    console.log("━".repeat(60) + "\n");
+
+    return NextResponse.json(responsePayload);
+
+  } catch (error) {
+    console.error(`\n❌ [${requestId}] API 에러 발생`);
+    console.error("━".repeat(60));
+    
+    if (error instanceof Error) {
+      console.error(`  에러 타입: ${error.constructor.name}`);
+      console.error(`  메시지: ${error.message}`);
+      console.error(`  스택:`, error.stack?.substring(0, 200));
+
+      // 특정 에러 분류
+      if (error.message.includes('API key')) {
+        console.error(`  원인: .env.local의 NEXT_PUBLIC_GEMINI_API_KEY 확인 필요`);
+      }
+      if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+        console.error(`  원인: API 키가 유효하지 않음`);
+      }
+      if (error.message.includes('429') || error.message.includes('Too Many')) {
+        console.error(`  원인: API 요청 제한 초과`);
+      }
+    } else {
+      console.error(`  에러:`, error);
+    }
+
+    console.error("━".repeat(60) + "\n");
+    
+    const errorMessage = error instanceof Error ? error.message : '타로 해석에 실패했습니다';
+    
     return NextResponse.json(
-        { error: "잘못된 요청 방식입니다. 해석을 보려면 POST 요청이 필요합니다." },
-        { status: 405 }
+      { error: errorMessage },
+      { status: 500 }
     );
+  }
 }
