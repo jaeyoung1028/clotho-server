@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
     }) || [];
     console.log();
 
-    // ✅ 7️⃣ 프롬프트 생성 (현실적 해석)
+    // ✅ 7️⃣ 프롬프트 생성 (간결하고 구조화된 해석)
     console.log(`✅ [${requestId}] 7️⃣ 프롬프트 생성 중`);
 
     const cardDetails = cards.map((c: MappedCard) => {
@@ -132,26 +132,33 @@ export async function POST(req: NextRequest) {
     const systemPrompt = `당신은 현실적이고 실용적인 타로 카드 리더입니다.
 
 【절대 규칙】
-1. 주어진 카드들만 해석합니다 (다른 카드 언급 금지)
-2. 각 카드의 의미를 현실적으로 설명합니다
-3. 카드들 간의 관계를 분석합니다
-4. 사용자가 이해하고 실행할 수 있는 조언을 제공합니다
-5. 신비한 분위기는 유지하되, 현실과 동떨어진 표현 금지
+1. 주어진 카드들만 해석합니다
+2. 구조화된 형식으로 명확하게 제시합니다
+3. 불필요한 감정 표현과 추가 설명 금지
+4. 사용자가 이해하고 실행할 수 있는 조언만 제공
 
 【금지 표현】
-- *(잠시 침묵과 함께 신비로운 분위기 연출)* 같은 무대 지문
-- 별빛, 우주, 영혼, 신비, 마법 같은 추상적 표현
-- "당신은 깨달을 것입니다" 같은 모호한 표현
-- 근거 없는 미래 예언
-- 초월적이거나 신비주의적인 언어
-- 과도한 감정적 표현
+- 처음에 "오" 같은 감탄사
+- *(무언가)* 같은 무대 지문
+- *** 같은 별이나 기호
+- 불릿 포인트(*)나 추가 설명
+- 추상적이고 신비한 표현
+- "당신은 ~할 것입니다" 같은 예언적 표현
+- "속삭입니다", "보여줍니다" 같은 의인화
 
-【필수 표현】
-- "이 카드는 ~를 의미합니다"
-- "이것이 당신의 상황에서 의미하는 바는..."
-- "구체적으로 당신이 할 수 있는 것은..."
-- "이 시기에 중요한 것은..."
-- 현실적이고 실행 가능한 조언`;
+【필수 형식】
+각 카드마다:
+【카드명】
+설명 (1-2문장)
+
+【종합 메시지】
+설명 (1-2문장)
+
+【질문에 대한 답변】
+설명 (1-2문장)
+
+【조언】
+설명 (1-2문장)`;
 
     const cardList = cards.map((c: MappedCard) => `${c.position}. ${c.nameKo}(${c.name})[${c.orientation}]`).join(', ');
 
@@ -162,38 +169,29 @@ ${cardDetails}
 【사용자 질문】
 "${userQuestion}"
 
-【해석 방식】
-다음 순서대로 현실적이고 구체적으로 분석하세요:
+【해석 지시사항】
+다음 형식으로 정확하게 작성하세요:
 
-1️⃣ 【각 카드가 말하는 의미】
-${cards.map((c: MappedCard) => `- ${c.position}번 카드 (${c.nameKo}): 질문 "${userQuestion}"에서 이 카드가 의미하는 바는?`).join('\n')}
+${cards.map((c: MappedCard) => `
+【${c.nameKo}(${c.name}) - ${c.orientation === 'reversed' ? '역방향' : '정방향'}】
+한 문장의 간단한 의미만 제시하세요.
+`).join('')}
 
-각 카드마다 1-2문장으로 명확하게 설명하세요.
+【종합 메시지】
+이 ${cards.length}장의 카드가 함께 말하는 핵심을 한두 문장으로 정리하세요.
 
-2️⃣ 【카드들이 함께 말하는 메시지】
-이 ${cards.length}장의 카드가 함께 전달하는 핵심 메시지는 무엇인가?
-- 전체적인 상황 분석
-- 카드들 간의 연결고리
-- 흐름과 변화
+【질문 "${userQuestion}"에 대한 답변】
+구체적인 답변을 한두 문장으로 제시하세요.
 
-3️⃣ 【질문에 대한 구체적인 답변】
-"${userQuestion}"에 대해 이 카드들은 무엇을 말하고 있는가?
-- Yes/No 또는 명확한 방향성
-- 그 이유
-- 현재 상황의 구체적인 분석
-
-4️⃣ 【실행 가능한 조언】
-사용자가 지금 할 수 있는 구체적인 행동은 무엇인가?
-- 할 수 있는 일
-- 피해야 할 일
-- 주의할 점
+【조언】
+실행 가능한 구체적인 조언을 한두 문장으로 제시하세요.
 
 【작성 규칙】
-- 신비로운 분위기는 유지하되, 현실적인 언어 사용
-- 추상적이지 않고 구체적인 설명
-- 사용자가 이해하고 실천할 수 있는 내용
-- 무대 지문이나 액션 표현 금지
-- 모호한 표현 금지`;
+- 불필요한 수식이나 추가 설명 없음
+- 직설적이고 명확한 표현만
+- 구조화된 형식 유지
+- 감정적 표현 최소화
+- 실질적이고 현실적인 내용만`;
 
     console.log(`  ✓ 프롬프트 길이: ${userPrompt.length} 자`);
     console.log(`  ✓ 카드 정보:`);
@@ -214,9 +212,9 @@ ${cards.map((c: MappedCard) => `- ${c.position}번 카드 (${c.nameKo}): 질문 
 
     // 🔍 응답 검증
     console.log(`🔍 [${requestId}] 응답 검증:`);
-    const responseText = aiResponse.toLowerCase();
+    const responseText = aiResponse;
 
-    const forbiddenPatterns = ['*(', '*)', '별빛', '우주', '영혼', '신비', '마법', '깨달을 것', '초월'];
+    const forbiddenPatterns = ['*(', '*)', '속삭', '보여줍', '당신은 ~할 것', '별빛', '우주', '영혼'];
     const foundPatterns = forbiddenPatterns.filter(pattern => responseText.includes(pattern));
 
     if (foundPatterns.length > 0) {
@@ -227,7 +225,7 @@ ${cards.map((c: MappedCard) => `- ${c.position}번 카드 (${c.nameKo}): 질문 
 
     console.log(`  ✅ 사용된 카드:`);
     cards.forEach((c: MappedCard) => {
-      const included = responseText.includes(c.nameKo.toLowerCase());
+      const included = responseText.includes(c.nameKo);
       console.log(`    ${included ? '✓' : '✗'} ${c.nameKo}`);
     });
     console.log();
