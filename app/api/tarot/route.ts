@@ -7,17 +7,27 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': 'https://clothos-thread.vercel.app',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders });
+}
+
 export async function GET() {
   try {
     const cards = await prisma.tarotCard.findMany({
       orderBy: { number: 'asc' }
     });
-    return NextResponse.json(cards);
+    return NextResponse.json(cards, { headers: corsHeaders });
   } catch (error) {
     console.error('카드 조회 에러:', error);
     return NextResponse.json(
       { error: '카드를 불러올 수 없습니다' },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }
@@ -62,7 +72,7 @@ export async function POST(req: NextRequest) {
     console.log(`✅ [${requestId}] 2️⃣ 데이터 검증`);
     if (!messages || messages.length === 0) {
       console.error(`❌ messages 비어있음`);
-      return NextResponse.json({ error: '메시지가 필요합니다' }, { status: 400 });
+      return NextResponse.json({ error: '메시지가 필요합니다' }, { status: 400, headers: corsHeaders });
     }
     console.log(`  ✓ messages 존재: ${messages.length}개\n`);
 
@@ -105,7 +115,6 @@ export async function POST(req: NextRequest) {
         console.log(`    - meaningRev 있음? ${!!dbCard.meaningRev ? '✓' : '✗'}`);
       }
 
-      // ⭐ 기본값 설정
       const meaningUp = dbCard?.meaningUp || '새로운 가능성과 기회';
       const meaningRev = dbCard?.meaningRev || '지체와 혼란';
 
@@ -126,7 +135,6 @@ export async function POST(req: NextRequest) {
     }) || [];
     console.log();
 
-    // ✅ 7️⃣ 프롬프트 생성 (강화된 버전)
     console.log(`✅ [${requestId}] 7️⃣ 프롬프트 생성 중`);
 
     const cardList = cards.map((c: MappedCard) => `- Position ${c.position}: ${c.nameKo}(${c.name}) [${c.orientation}]`).join('\n');
@@ -184,7 +192,6 @@ ${cardInterpretations}
     });
     console.log(`  ✓ 프롬프트 샘플 (첫 500자):\n${userPrompt.substring(0, 500)}\n`);
 
-    // ✅ 8️⃣ Gemini API 호출 (System Instruction 강화)
     console.log(`✅ [${requestId}] 8️⃣ Gemini API 호출`);
 
     const systemInstruction = `당신은 타로 카드 해석 전문가입니다.
@@ -219,7 +226,6 @@ ${cardInterpretations}
     console.log(`  ✓ API 응답 받음 (${aiResponse.length} 자)`);
     console.log(`  ✓ 응답 첫 300자:\n${aiResponse.substring(0, 300)}...\n`);
 
-    // 🔍 응답 검증 - 카드명 확인
     console.log(`🔍 [${requestId}] 응답에 카드명 포함 여부:`);
     cards.forEach((c: MappedCard) => {
       const hasKoName = aiResponse.includes(c.nameKo);
@@ -231,7 +237,6 @@ ${cardInterpretations}
       }
     });
 
-    // 불필요한 표현 확인
     console.log(`\n  ✅ 불필요한 표현 체크:`);
     const badPatterns = [
       '*(', '*)',
@@ -257,7 +262,6 @@ ${cardInterpretations}
     }
     console.log();
 
-    // ✅ 9️⃣ 응답 페이로드 구성
     console.log(`✅ [${requestId}] 9️⃣ 응답 페이로드 구성`);
 
     const responsePayload = {
@@ -269,11 +273,10 @@ ${cardInterpretations}
     console.log(`  ✓ text: ${responsePayload.text.length} 자`);
     console.log(`  ✓ cards: ${responsePayload.cards.length}개\n`);
 
-    // ✅ 1️⃣0️⃣ JSON 응답 전송
     console.log(`✅ [${requestId}] 🔟 JSON 응답 전송`);
     console.log(`${'═'.repeat(80)}\n`);
 
-    return NextResponse.json(responsePayload);
+    return NextResponse.json(responsePayload, { headers: corsHeaders });
 
   } catch (error) {
     console.error(`\n❌ [${requestId}] API 에러 발생`);
@@ -292,7 +295,7 @@ ${cardInterpretations}
     
     return NextResponse.json(
       { error: errorMessage },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }
