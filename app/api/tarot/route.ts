@@ -117,81 +117,47 @@ export async function POST(req: NextRequest) {
     }) || [];
     console.log();
 
-    // ✅ 7️⃣ 프롬프트 생성 (간결하고 구조화된 해석)
+    // ✅ 7️⃣ 프롬프트 생성 (간결하고 직설적)
     console.log(`✅ [${requestId}] 7️⃣ 프롬프트 생성 중`);
 
     const cardDetails = cards.map((c: MappedCard) => {
       const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
-      return `
-【카드 ${c.position}】
-카드명: ${c.nameKo}(${c.name})
-방향: ${c.orientation === 'reversed' ? '역방향' : '정방향'}
+      return `카드 ${c.position}: ${c.nameKo}(${c.name}) [${c.orientation === 'reversed' ? '역' : '정'}]
 의미: ${meaning}`;
     }).join('\n');
 
-    const systemPrompt = `당신은 현실적이고 실용적인 타로 카드 리더입니다.
+    const cardList = cards.map((c: MappedCard) => `${c.position}. ${c.nameKo}(${c.name})`).join(', ');
 
-【절대 규칙】
-1. 주어진 카드들만 해석합니다
-2. 구조화된 형식으로 명확하게 제시합니다
-3. 불필요한 감정 표현과 추가 설명 금지
-4. 사용자가 이해하고 실행할 수 있는 조언만 제공
+    const userPrompt = `질문: "${userQuestion}"
 
-【금지 표현】
-- 처음에 "오" 같은 감탄사
-- *(무언가)* 같은 무대 지문
-- *** 같은 별이나 기호
-- 불릿 포인트(*)나 추가 설명
-- 추상적이고 신비한 표현
-- "당신은 ~할 것입니다" 같은 예언적 표현
-- "속삭입니다", "보여줍니다" 같은 의인화
-
-【필수 형식】
-각 카드마다:
-【카드명】
-설명 (1-2문장)
-
-【종합 메시지】
-설명 (1-2문장)
-
-【질문에 대한 답변】
-설명 (1-2문장)
-
-【조언】
-설명 (1-2문장)`;
-
-    const cardList = cards.map((c: MappedCard) => `${c.position}. ${c.nameKo}(${c.name})[${c.orientation}]`).join(', ');
-
-    const userPrompt = `【현재 뽑은 카드: ${cardList}】
+뽑은 카드: ${cardList}
 
 ${cardDetails}
 
-【사용자 질문】
-"${userQuestion}"
+【지시사항】
+- 쓸데없는 인사말, 추임새 절대 금지
+- 신비로운 분위기 표현 금지
+- *(action)* 같은 무대지문 금지
+- 다른 카드는 언급하지 마세요
+- 직설적이고 명확하게
+- 초반 추임새 없이 바로 해석 시작
 
-【해석 지시사항】
-다음 형식으로 정확하게 작성하세요:
+【형식 - 반드시 이대로】
 
-${cards.map((c: MappedCard) => `
-【${c.nameKo}(${c.name}) - ${c.orientation === 'reversed' ? '역방향' : '정방향'}】
-한 문장의 간단한 의미만 제시하세요.
-`).join('')}
+【각 카드의 의미】
+${cards.map((c: MappedCard) => `- 카드 ${c.position} (${c.nameKo}): "${userQuestion}"에 대해 ...`).join('\n')}
 
-【종합 메시지】
-이 ${cards.length}장의 카드가 함께 말하는 핵심을 한두 문장으로 정리하세요.
-
-【질문 "${userQuestion}"에 대한 답변】
-구체적인 답변을 한두 문장으로 제시하세요.
+【종합 해석 - 정확히 4~5줄】
+당신의 "${userQuestion}"은: [내용]
+[내용]
+[내용]
+[내용]
 
 【조언】
-실행 가능한 구체적인 조언을 한두 문장으로 제시하세요.
-
-【작성 규칙】
-- 불필요한 수식이나 추가 설명 없음
-- 직설적이고 명확한 표현만
-- 구조화된 형식 유지
-- 감정적 표현 최소화
-- 실질적이고 현실적인 내용만`;
+지금 당신이 할 수 있는 것:
+- [구체적 행동]
+- [구체적 행동]
+- [구체적 행동]`;
 
     console.log(`  ✓ 프롬프트 길이: ${userPrompt.length} 자`);
     console.log(`  ✓ 카드 정보:`);
@@ -214,13 +180,24 @@ ${cards.map((c: MappedCard) => `
     console.log(`🔍 [${requestId}] 응답 검증:`);
     const responseText = aiResponse;
 
-    const forbiddenPatterns = ['*(', '*)', '속삭', '보여줍', '당신은 ~할 것', '별빛', '우주', '영혼'];
-    const foundPatterns = forbiddenPatterns.filter(pattern => responseText.includes(pattern));
+    const badPatterns = [
+      '*(', '*)',
+      '별빛', '우주', '영혼', '신비', '마법',
+      '아, ', '보세요', '저의', '감돕니다',
+      '(잠시', '(신비', '깨달'
+    ];
 
-    if (foundPatterns.length > 0) {
-      console.warn(`  ⚠️ 금지된 표현 발견: ${foundPatterns.join(', ')}`);
+    let foundBadPatterns: string[] = [];
+    badPatterns.forEach(pattern => {
+      if (responseText.includes(pattern)) {
+        foundBadPatterns.push(pattern);
+      }
+    });
+
+    if (foundBadPatterns.length > 0) {
+      console.warn(`  ⚠️ 불필요한 표현 발견: ${foundBadPatterns.join(', ')}`);
     } else {
-      console.log(`  ✅ 금지된 표현 없음`);
+      console.log(`  ✅ 간결한 형식 유지`);
     }
 
     console.log(`  ✅ 사용된 카드:`);
