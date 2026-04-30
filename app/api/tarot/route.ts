@@ -1,11 +1,11 @@
-// app/api/tarot/route.ts
+// clotho-server/app/api/tarot/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
-const genAI = new GoogleGenerativeAI(process.env.NEXT_PUBLIC_GEMINI_API_KEY!);
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
 
 export async function GET() {
   try {
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
     }) || [];
     console.log();
 
-    // ✅ 7️⃣ 프롬프트 생성 (간결하고 직설적)
+    // ✅ 7️⃣ 프롬프트 생성
     console.log(`✅ [${requestId}] 7️⃣ 프롬프트 생성 중`);
 
     const cardDetails = cards.map((c: MappedCard) => {
@@ -133,16 +133,6 @@ export async function POST(req: NextRequest) {
 뽑은 카드: ${cardList}
 
 ${cardDetails}
-
-【지시사항】
-- 쓸데없는 인사말, 추임새 절대 금지
-- 신비로운 분위기 표현 금지
-- *(action)* 같은 무대지문 금지
-- 다른 카드는 언급하지 마세요
-- 직설적이고 명확하게
-- 초반 추임새 없이 바로 해석 시작
-
-【형식 - 반드시 이대로】
 
 【각 카드의 의미】
 ${cards.map((c: MappedCard) => `- 카드 ${c.position} (${c.nameKo}): "${userQuestion}"에 대해 ...`).join('\n')}
@@ -166,9 +156,44 @@ ${cards.map((c: MappedCard) => `- 카드 ${c.position} (${c.nameKo}): "${userQue
     });
     console.log();
 
-    // ✅ 8️⃣ Gemini API 호출
+    // ✅ 8️⃣ Gemini API 호출 (System Instruction 추가!)
     console.log(`✅ [${requestId}] 8️⃣ Gemini API 호출`);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+
+    const systemInstruction = `당신은 타로 카드 해석 전문가입니다.
+
+【절대 규칙 - 이것을 지키지 않으면 안 됩니다】
+1. 초반 인사말 없음 - 바로 해석 시작
+2. 신비로운 표현 금지 - 직설적이고 명확하게
+3. 무대지문 금지 - *(action)* 같은 표현 절대 금지
+4. 추임새 금지 - "아, ", "보세요", "저의" 같은 표현 금지
+5. 다른 카드 언급 금지 - 주어진 카드만 사용
+
+【응답 형식】
+1. 각 카드의 의미 (간단명료)
+2. 종합 해석 (정확히 4~5줄)
+3. 조언 (구체적 행동)
+
+【금지된 표현들】
+- "별빛", "우주", "영혼", "신비", "마법"
+- "깨달음", "초월", "차원", "진동"
+- "감돕니다", "감싸안", "속삭임"
+- *(잠시)*, *(침묵)*, *(신비*)
+- "아, ", "보세요, ", "저의 "
+- "당신의 앞에 앉으셨군요"
+- "보이지 않는 별들의"
+- "간절한 마음"
+
+【필수 표현】
+- "이 카드는 ~를 의미합니다"
+- "구체적으로 당신이 할 수 있는 것은"
+- "지금 중요한 것은"
+- 직설적이고 실용적인 조언`;
+
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash-lite',
+      systemInstruction: systemInstruction
+    });
+
     const result = await model.generateContent(userPrompt);
     const aiResponse = result.response.text();
 
@@ -184,7 +209,10 @@ ${cards.map((c: MappedCard) => `- 카드 ${c.position} (${c.nameKo}): "${userQue
       '*(', '*)',
       '별빛', '우주', '영혼', '신비', '마법',
       '아, ', '보세요', '저의', '감돕니다',
-      '(잠시', '(신비', '깨달'
+      '(잠시', '(신비', '깨달',
+      '당신의 앞에 앉으셨',
+      '보이지 않는 별들',
+      '간절한 마음'
     ];
 
     let foundBadPatterns: string[] = [];
