@@ -33,7 +33,7 @@ interface Message {
 }
 
 interface MappedCard {
-  id: number | undefined;  // ← Int이므로 number
+  id: number | undefined;
   number: number;
   name: string;
   nameKo: string;
@@ -117,57 +117,71 @@ export async function POST(req: NextRequest) {
     }) || [];
     console.log();
 
-    // ✅ 7️⃣ 프롬프트 생성
+    // ✅ 7️⃣ 프롬프트 생성 (완전 수정)
     console.log(`✅ [${requestId}] 7️⃣ 프롬프트 생성 중`);
 
     const cardDetails = cards.map((c: MappedCard) => {
       const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
       return `
 【카드 ${c.position}】
-이름: ${c.nameKo}(${c.name})
+카드명: ${c.nameKo}(${c.name})
 방향: ${c.orientation === 'reversed' ? '역방향' : '정방향'}
 의미: ${meaning}`;
     }).join('\n');
 
-    const systemPrompt = `당신은 타로 카드 해석가입니다.
+    const systemPrompt = `당신은 전문 타로 카드 리더입니다.
 
-【규칙】
-1. 아래에 주어진 카드들만 사용합니다
-2. 절대 다른 카드를 언급하지 않습니다
-3. "만약", "예를 들어", "예시" 같은 단어 금지
-4. 각 카드를 직접 해석합니다
-5. 사용자의 질문에 구체적으로 답합니다
+【절대 규칙】
+1. 주어진 카드들만 해석합니다 (다른 카드 언급 금지)
+2. 각 카드의 구체적인 의미를 설명합니다
+3. 카드들 간의 관계를 분석합니다
+4. "만약", "예를 들어", "예시", "다음과 같은" 금지
+5. 사용자 질문에 직접 답변합니다
 
-【금지 패턴】
-- "만약 ○○ 카드라면"
-- "예를 들어 ××를 뽑았다면"
-- "다음과 같은 경우"
-- "예시: ~~"
-- 주어진 카드 외 다른 카드명 언급`;
+【해석 구성】
+- 각 카드의 의미 설명
+- 카드들이 함께 말하는 메시지
+- 사용자 질문에 대한 구체적 답변
+- 실행 가능한 조언`;
 
-    const userPrompt = `${systemPrompt}
+    const cardList = cards.map((c: MappedCard) => `${c.position}. ${c.nameKo}(${c.name})[${c.orientation}]`).join(', ');
 
-【현재 뽑은 카드들】
+    const userPrompt = `【현재 뽑은 카드: ${cardList}】
+
 ${cardDetails}
 
 【사용자 질문】
-${userQuestion}
+"${userQuestion}"
 
-【해석 방식】
-위의 ${cards.length}장 카드만 사용하여:
-1. 각 카드가 의미하는 것
-2. 카드들이 함께 나타내는 메시지
-3. 사용자 질문 "${userQuestion}"에 대한 구체적인 해석
+【당신의 해석】
+위의 ${cards.length}장의 카드를 바탕으로:
 
-을 제공하세요.
+1️⃣ 【각 카드의 의미】
+${cards.map((c: MappedCard) => `
+- ${c.position}번 카드 (${c.nameKo}):
+  이 카드가 당신의 질문 "${userQuestion}"에서 의미하는 바는 무엇인가?
+`).join('')}
 
-【지금 이 해석에서 사용할 카드】
-${cards.map((c: MappedCard) => `- ${c.nameKo}(${c.name})`).join('\n')}
+2️⃣ 【카드들의 종합 메시지】
+이 ${cards.length}장의 카드가 함께 말하고 있는 핵심 메시지는 무엇인가?
+카드들 간의 관계와 흐름을 분석하세요.
 
-이 카드들만 기반으로 해석하세요.`;
+3️⃣ 【질문에 대한 답변】
+사용자의 질문 "${userQuestion}"에 대해 이 카드들은 무엇을 말하고 있는가?
+구체적이고 실질적인 답변을 제공하세요.
+
+4️⃣ 【조언과 메시지】
+이 카드들이 제시하는 조언과 앞으로의 방향성은 무엇인가?
+
+신비로운 분위기를 유지하되, 반드시 실질적이고 구체적인 카드 해석을 제공하세요.
+추상적인 표현보다 사용자가 이해하고 실행할 수 있는 내용을 중심으로 작성하세요.`;
 
     console.log(`  ✓ 프롬프트 길이: ${userPrompt.length} 자`);
-    console.log(`  ✓ 카드 정보 포함됨\n`);
+    console.log(`  ✓ 카드 정보:`);
+    cards.forEach((c: MappedCard) => {
+      console.log(`    ${c.position}. ${c.nameKo} - ${c.orientation}`);
+    });
+    console.log();
 
     // ✅ 8️⃣ Gemini API 호출
     console.log(`✅ [${requestId}] 8️⃣ Gemini API 호출`);
@@ -177,7 +191,7 @@ ${cards.map((c: MappedCard) => `- ${c.nameKo}(${c.name})`).join('\n')}
 
     console.log(`  ✓ API 응답 받음`);
     console.log(`  ✓ 응답 길이: ${aiResponse.length} 자`);
-    console.log(`  ✓ 응답 첫 200자: ${aiResponse.substring(0, 200)}...\n`);
+    console.log(`  ✓ 응답 내용:\n${aiResponse}\n`);
 
     // 🔍 응답 검증
     console.log(`🔍 [${requestId}] 응답 검증:`);
