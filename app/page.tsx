@@ -37,23 +37,34 @@ export default function Home() {
     const newMessages = [initialUserMsg];
     setMessages(newMessages);
 
-    // 타로 카드 3장 랜덤 생성 (1~78)
-    const randomCards: number[] = [];
-    while (randomCards.length < 3) {
-      const randomNum = Math.floor(Math.random() * 78) + 1;
-      if (!randomCards.includes(randomNum)) {
-        randomCards.push(randomNum);
-      }
-    }
-
     try {
-      // ✨ [중요] 호출 주소를 절대 경로 "/api/tarot"으로 확실히 고정합니다.
-      const response = await fetch("/api/tarot", {
+      // DB에서 실제 카드 번호 목록 가져오기
+      const allCards = await fetch("https://clotho-server-vyw7.vercel.app/api/tarot")
+        .then(res => res.json());
+      const allNumbers: number[] = allCards.map((c: any) => c.number);
+
+      // 실제 DB 번호 중에서 랜덤 3장 선택
+      const pickedNumbers: number[] = [];
+      while (pickedNumbers.length < 3) {
+        const randomIndex = Math.floor(Math.random() * allNumbers.length);
+        const randomNum = allNumbers[randomIndex];
+        if (!pickedNumbers.includes(randomNum)) {
+          pickedNumbers.push(randomNum);
+        }
+      }
+
+      // 서버가 기대하는 형식으로 변환
+      const selectedCards = pickedNumbers.map((num) => ({
+        index: num,
+        isReversed: Math.random() < 0.5,
+      }));
+
+      const response = await fetch("https://clotho-server-vyw7.vercel.app/api/tarot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           messages: newMessages, 
-          selectedCards: randomCards 
+          selectedCards: selectedCards
         }),
       });
 
@@ -64,7 +75,6 @@ export default function Home() {
         setStep("chat");
         setInput(""); 
       } else {
-        // 백엔드에서 보낸 에러 메시지 확인
         alert("운명의 실타래를 읽는 중 오류 발생: " + (data.error || data.text));
       }
     } catch (error) {
@@ -88,8 +98,7 @@ export default function Home() {
     setLoading(true);
 
     try {
-      // ✨ 추가 질문도 동일한 "/api/tarot" 경로로 POST 요청을 보냅니다.
-      const response = await fetch("/api/tarot", {
+      const response = await fetch("https://clotho-server-vyw7.vercel.app/api/tarot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: currentMessages }),
