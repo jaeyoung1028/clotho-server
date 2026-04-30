@@ -42,6 +42,7 @@ export default function Home() {
       const allCards = await fetch("https://clotho-server-vyw7.vercel.app/api/tarot")
         .then(res => res.json());
       const allNumbers: number[] = allCards.map((c: any) => c.number);
+      console.log("allNumbers:", allNumbers);
 
       // 실제 DB 번호 중에서 랜덤 3장 선택
       const pickedNumbers: number[] = [];
