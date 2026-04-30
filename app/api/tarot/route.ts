@@ -87,6 +87,8 @@ export async function POST(req: NextRequest) {
     console.log(`  ✓ DB 조회 결과: ${dbCards.length}개 카드 발견`);
     dbCards.forEach(card => {
       console.log(`    - number=${card.number}, id=${card.id}, nameKo="${card.nameKo}"`);
+      console.log(`      meaningUp: ${card.meaningUp?.substring(0, 100) || '(없음)'}`);
+      console.log(`      meaningRev: ${card.meaningRev?.substring(0, 100) || '(없음)'}`);
     });
     console.log();
 
@@ -97,7 +99,15 @@ export async function POST(req: NextRequest) {
 
       if (!dbCard) {
         console.warn(`  ⚠️ Position ${index + 1}: 카드 번호 ${selection.index} DB에서 못 찾음`);
+      } else {
+        console.log(`  ✓ Position ${index + 1}: ${dbCard.nameKo}`);
+        console.log(`    - meaningUp 있음? ${!!dbCard.meaningUp ? '✓' : '✗'}`);
+        console.log(`    - meaningRev 있음? ${!!dbCard.meaningRev ? '✓' : '✗'}`);
       }
+
+      // ⭐ 기본값 설정
+      const meaningUp = dbCard?.meaningUp || '새로운 가능성과 기회';
+      const meaningRev = dbCard?.meaningRev || '지체와 혼란';
 
       const mappedCard: MappedCard = {
         id: dbCard?.id,
@@ -108,86 +118,95 @@ export async function POST(req: NextRequest) {
         orientation: orientation,
         isReversed: selection.isReversed || false,
         position: index + 1,
-        meaningUp: dbCard?.meaningUp || '',
-        meaningRev: dbCard?.meaningRev || ''
+        meaningUp: meaningUp,
+        meaningRev: meaningRev
       };
 
-      console.log(`  ✓ Position ${index + 1}: ${mappedCard.nameKo} (${orientation})`);
       return mappedCard;
     }) || [];
     console.log();
 
-    // ✅ 7️⃣ 프롬프트 생성
+    // ✅ 7️⃣ 프롬프트 생성 (강화된 버전)
     console.log(`✅ [${requestId}] 7️⃣ 프롬프트 생성 중`);
 
-    const cardDetails = cards.map((c: MappedCard) => {
+    const cardList = cards.map((c: MappedCard) => `- Position ${c.position}: ${c.nameKo}(${c.name}) [${c.orientation}]`).join('\n');
+
+    const cardInfoDetail = cards.map((c: MappedCard) => {
       const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
-      return `카드 ${c.position}: ${c.nameKo}(${c.name}) [${c.orientation === 'reversed' ? '역' : '정'}]
-의미: ${meaning}`;
+      return `
+Position ${c.position}: ${c.nameKo}(${c.name})
+- 한글이름: ${c.nameKo}
+- 영문이름: ${c.name}
+- 방향: ${c.orientation}
+- 의미: ${meaning}`;
     }).join('\n');
 
-    const cardList = cards.map((c: MappedCard) => `${c.position}. ${c.nameKo}(${c.name})`).join(', ');
+    const requiredCardNames = cards.map((c: MappedCard) => `   - ${c.nameKo}(${c.name})`).join('\n');
 
-    const userPrompt = `질문: "${userQuestion}"
+    const cardInterpretations = cards.map((c: MappedCard) => {
+      const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
+      return `Position ${c.position} - ${c.nameKo}(${c.name}):
+의미: ${meaning}
+질문 "${userQuestion}"과의 연결:`;
+    }).join('\n\n');
 
-뽑은 카드: ${cardList}
+    const userPrompt = `【중요】당신은 ONLY 이 카드들을 해석하세요. 다른 카드는 절대 말하지 마세요.
 
-${cardDetails}
+현재 뽑은 카드:
+${cardList}
 
-【각 카드의 의미】
-${cards.map((c: MappedCard) => `- 카드 ${c.position} (${c.nameKo}): "${userQuestion}"에 대해 ...`).join('\n')}
+【카드 정보 - 이것만 사용】
+${cardInfoDetail}
+
+【명령】
+1. 위의 ${cards.length}장 카드만 해석하세요
+2. 각 카드를 순서대로 해석하세요
+3. 다음 카드명들이 응답에 반드시 포함되어야 합니다:
+${requiredCardNames}
+4. 초반 인사말 없음
+5. 신비로운 표현 없음
+
+질문: "${userQuestion}"
+
+【해석】
+${cardInterpretations}
 
 【종합 해석 - 정확히 4~5줄】
-당신의 "${userQuestion}"은: [내용]
-[내용]
-[내용]
-[내용]
+이 ${cards.length}장의 카드가 함께 말하는 것:
 
 【조언】
-지금 당신이 할 수 있는 것:
-- [구체적 행동]
-- [구체적 행동]
-- [구체적 행동]`;
+지금 할 수 있는 구체적인 행동:`;
 
     console.log(`  ✓ 프롬프트 길이: ${userPrompt.length} 자`);
-    console.log(`  ✓ 카드 정보:`);
-    cards.forEach((c: MappedCard) => {
-      console.log(`    ${c.position}. ${c.nameKo} - ${c.orientation}`);
+    console.log(`  ✓ 필수 카드명:`);
+    cards.forEach(c => {
+      console.log(`    - ${c.nameKo}(${c.name})`);
     });
-    console.log();
+    console.log(`  ✓ 프롬프트 샘플 (첫 500자):\n${userPrompt.substring(0, 500)}\n`);
 
-    // ✅ 8️⃣ Gemini API 호출 (System Instruction 추가!)
+    // ✅ 8️⃣ Gemini API 호출 (System Instruction 강화)
     console.log(`✅ [${requestId}] 8️⃣ Gemini API 호출`);
 
     const systemInstruction = `당신은 타로 카드 해석 전문가입니다.
 
-【절대 규칙 - 이것을 지키지 않으면 안 됩니다】
-1. 초반 인사말 없음 - 바로 해석 시작
-2. 신비로운 표현 금지 - 직설적이고 명확하게
-3. 무대지문 금지 - *(action)* 같은 표현 절대 금지
-4. 추임새 금지 - "아, ", "보세요", "저의" 같은 표현 금지
-5. 다른 카드 언급 금지 - 주어진 카드만 사용
+【CRITICAL - 반드시 지켜야 합니다】
+- 반드시 주어진 카드들만 해석합니다
+- 다른 카드는 절대 언급하지 않습니다
+- 각 카드의 이름을 응답에 포함해야 합니다
+- 프롬프트의 카드 정보를 사용해서 해석합니다
 
-【응답 형식】
-1. 각 카드의 의미 (간단명료)
-2. 종합 해석 (정확히 4~5줄)
-3. 조언 (구체적 행동)
+【금지】
+- 다른 카드 언급
+- 초반 긴 인사말
+- 신비로운 표현 (별빛, 우주, 영혼, 신비, 마법)
+- *(action)* 무대지문
+- "아, ", "보세요", "저의" 같은 추임새
 
-【금지된 표현들】
-- "별빛", "우주", "영혼", "신비", "마법"
-- "깨달음", "초월", "차원", "진동"
-- "감돕니다", "감싸안", "속삭임"
-- *(잠시)*, *(침묵)*, *(신비*)
-- "아, ", "보세요, ", "저의 "
-- "당신의 앞에 앉으셨군요"
-- "보이지 않는 별들의"
-- "간절한 마음"
-
-【필수 표현】
-- "이 카드는 ~를 의미합니다"
-- "구체적으로 당신이 할 수 있는 것은"
-- "지금 중요한 것은"
-- 직설적이고 실용적인 조언`;
+【필수】
+- 각 카드명 명시
+- 주어진 의미 사용
+- 구체적 조언
+- 직설적인 표현`;
 
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash-lite',
@@ -197,14 +216,23 @@ ${cards.map((c: MappedCard) => `- 카드 ${c.position} (${c.nameKo}): "${userQue
     const result = await model.generateContent(userPrompt);
     const aiResponse = result.response.text();
 
-    console.log(`  ✓ API 응답 받음`);
-    console.log(`  ✓ 응답 길이: ${aiResponse.length} 자`);
-    console.log(`  ✓ 응답 내용:\n${aiResponse}\n`);
+    console.log(`  ✓ API 응답 받음 (${aiResponse.length} 자)`);
+    console.log(`  ✓ 응답 첫 300자:\n${aiResponse.substring(0, 300)}...\n`);
 
-    // 🔍 응답 검증
-    console.log(`🔍 [${requestId}] 응답 검증:`);
-    const responseText = aiResponse;
+    // 🔍 응답 검증 - 카드명 확인
+    console.log(`🔍 [${requestId}] 응답에 카드명 포함 여부:`);
+    cards.forEach((c: MappedCard) => {
+      const hasKoName = aiResponse.includes(c.nameKo);
+      const hasEngName = aiResponse.includes(c.name);
+      const included = hasKoName || hasEngName;
+      console.log(`  ${c.position}. ${c.nameKo}(${c.name}): ${included ? '✓' : '✗'}`);
+      if (!included) {
+        console.error(`    ❌ ERROR: 이 카드가 응답에 없습니다!`);
+      }
+    });
 
+    // 불필요한 표현 확인
+    console.log(`\n  ✅ 불필요한 표현 체크:`);
     const badPatterns = [
       '*(', '*)',
       '별빛', '우주', '영혼', '신비', '마법',
@@ -217,7 +245,7 @@ ${cards.map((c: MappedCard) => `- 카드 ${c.position} (${c.nameKo}): "${userQue
 
     let foundBadPatterns: string[] = [];
     badPatterns.forEach(pattern => {
-      if (responseText.includes(pattern)) {
+      if (aiResponse.includes(pattern)) {
         foundBadPatterns.push(pattern);
       }
     });
@@ -225,14 +253,8 @@ ${cards.map((c: MappedCard) => `- 카드 ${c.position} (${c.nameKo}): "${userQue
     if (foundBadPatterns.length > 0) {
       console.warn(`  ⚠️ 불필요한 표현 발견: ${foundBadPatterns.join(', ')}`);
     } else {
-      console.log(`  ✅ 간결한 형식 유지`);
+      console.log(`  ✅ 불필요한 표현 없음`);
     }
-
-    console.log(`  ✅ 사용된 카드:`);
-    cards.forEach((c: MappedCard) => {
-      const included = responseText.includes(c.nameKo);
-      console.log(`    ${included ? '✓' : '✗'} ${c.nameKo}`);
-    });
     console.log();
 
     // ✅ 9️⃣ 응답 페이로드 구성
