@@ -58,244 +58,126 @@ interface MappedCard {
 export async function POST(req: NextRequest) {
   const requestId = Date.now();
 
-  console.log(`\n${'═'.repeat(80)}`);
-  console.log(`🚀 [${requestId}] API 요청 시작`);
-  console.log(`${'═'.repeat(80)}\n`);
-
   try {
-    console.log(`📋 [${requestId}] 1️⃣ 요청 데이터 파싱`);
     const { messages, selectedCards } = await req.json();
 
-    console.log(`  ✓ messages: ${JSON.stringify(messages)}`);
-    console.log(`  ✓ selectedCards (원본): ${JSON.stringify(selectedCards)}\n`);
-
-    console.log(`✅ [${requestId}] 2️⃣ 데이터 검증`);
     if (!messages || messages.length === 0) {
-      console.error(`❌ messages 비어있음`);
       return NextResponse.json({ error: '메시지가 필요합니다' }, { status: 400, headers: corsHeaders });
     }
-    console.log(`  ✓ messages 존재: ${messages.length}개\n`);
 
-    console.log(`✅ [${requestId}] 3️⃣ 사용자 질문 추출`);
     const lastUserMessage = messages[messages.length - 1] as Message;
     const userQuestion = lastUserMessage.content;
-    console.log(`  ✓ 질문: "${userQuestion}"\n`);
-
-    console.log(`✅ [${requestId}] 4️⃣ 선택된 카드 인덱스 추출`);
     const cardIndexes = (selectedCards as SelectedCard[])?.map((card: SelectedCard) => card.index) || [];
-    console.log(`  ✓ 카드 번호 배열: [${cardIndexes.join(', ')}]\n`);
 
-    console.log(`✅ [${requestId}] 5️⃣ DB에서 카드 정보 조회`);
-    console.log(`  📍 쿼리: where { number: { in: [${cardIndexes.join(', ')}] } }`);
-    
     const dbCards = await prisma.tarotCard.findMany({
       where: {
         number: { in: cardIndexes }
       }
     });
 
-    console.log(`  ✓ DB 조회 결과: ${dbCards.length}개 카드 발견`);
-    dbCards.forEach(card => {
-      console.log(`    - number=${card.number}, id=${card.id}, nameKo="${card.nameKo}"`);
-      console.log(`      meaningUp: ${card.meaningUp?.substring(0, 100) || '(없음)'}`);
-      console.log(`      meaningRev: ${card.meaningRev?.substring(0, 100) || '(없음)'}`);
-    });
-    console.log();
-
-    console.log(`✅ [${requestId}] 6️⃣ 카드 정보 매핑 (선택 순서 유지)`);
+    const positionNames = ['과거', '현재', '미래'];
     const cards = (selectedCards as SelectedCard[])?.map((selection: SelectedCard, index: number) => {
       const dbCard = dbCards.find(c => c.number === selection.index);
-      const orientation = selection.isReversed ? 'reversed' : 'upright';
+      const orientation = selection.isReversed ? '역방향' : '정방향';
+      const posName = positionNames[index] || `위치 ${index + 1}`;
 
-      if (!dbCard) {
-        console.warn(`  ⚠️ Position ${index + 1}: 카드 번호 ${selection.index} DB에서 못 찾음`);
-      } else {
-        console.log(`  ✓ Position ${index + 1}: ${dbCard.nameKo}`);
-        console.log(`    - meaningUp 있음? ${!!dbCard.meaningUp ? '✓' : '✗'}`);
-        console.log(`    - meaningRev 있음? ${!!dbCard.meaningRev ? '✓' : '✗'}`);
-      }
-
-      const meaningUp = dbCard?.meaningUp || '새로운 가능성과 기회';
-      const meaningRev = dbCard?.meaningRev || '지체와 혼란';
-
-      const mappedCard: MappedCard = {
+      return {
         id: dbCard?.id,
         number: selection.index,
-        name: dbCard?.name || '알 수 없는 카드',
+        name: dbCard?.name || 'Unknown',
         nameKo: dbCard?.nameKo || '',
         imageUrl: dbCard?.imageUrl || '',
         orientation: orientation,
         isReversed: selection.isReversed || false,
         position: index + 1,
-        meaningUp: meaningUp,
-        meaningRev: meaningRev
+        positionName: posName,
+        meaningUp: dbCard?.meaningUp || '긍정적인 변화',
+        meaningRev: dbCard?.meaningRev || '준비가 필요한 시기'
       };
-
-      return mappedCard;
     }) || [];
-    console.log();
 
-    console.log(`✅ [${requestId}] 7️⃣ 프롬프트 생성 중`);
+    const isFollowUp = messages.length > 1;
+    let userPrompt = "";
 
-    const cardList = cards.map((c: MappedCard) => `- Position ${c.position}: ${c.nameKo}(${c.name}) [${c.orientation}]`).join('\n');
+    if (isFollowUp) {
+      // 💬 추가 질문용 프롬프트: 여신의 무게감 유지
+      userPrompt = `
+당신은 운명의 실타래를 잣는 여신, 클로토(Clotho)입니다. 사용자가 당신이 보여준 운명에 대해 더 깊은 질문을 던졌습니다.
 
-    const cardInfoDetail = cards.map((c: MappedCard) => {
-      const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
-      return `
-Position ${c.position}: ${c.nameKo}(${c.name})
-- 한글이름: ${c.nameKo}
-- 영문이름: ${c.name}
-- 방향: ${c.orientation}
-- 의미: ${meaning}`;
-    }).join('\n');
+【참조 카드】
+${cards.map(c => `- ${c.positionName}: ${c.nameKo} [${c.orientation}]`).join('\n')}
 
-    const requiredCardNames = cards.map((c: MappedCard) => `   - ${c.nameKo}(${c.name})`).join('\n');
+【지시 사항】
+1. 절대 JSON이나 코드 형식을 출력하지 마십시오.
+2. 당신은 필멸자에게 운명의 길을 일러주는 여신입니다. 가벼운 말투를 버리고, 단호하면서도 품위 있는 어조를 유지하십시오.
+3. "영혼", "우주", "신비" 같은 모호한 단어 대신, 사용자가 처한 현실(취업, 관계, 금전 등)에서 즉각 이해할 수 있는 구체적인 어휘를 사용하십시오.
+4. 답변은 명확하고 간결해야 합니다.
 
-    const cardInterpretations = cards.map((c: MappedCard) => {
-      const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
-      return `Position ${c.position} - ${c.nameKo}(${c.name}):
+사용자의 물음: "${userQuestion}"
+
+여신의 답변:`;
+    } else {
+      // 🔮 첫 해석용 프롬프트: 여신의 선언
+      const cardList = cards.map(c => `- ${c.positionName}: ${c.nameKo}(${c.name}) [${c.orientation}]`).join('\n');
+      const cardInfoDetail = cards.map(c => {
+        const meaning = c.isReversed ? c.meaningRev : c.meaningUp;
+        return `${c.positionName}: ${c.nameKo}\n- 방향: ${c.orientation}\n- 의미: ${meaning}`;
+      }).join('\n');
+
+      const cardInterpretations = cards.map(c => {
+        const meaning = c.isReversed ? c.meaningRev : c.meaningUp;
+        return `${c.positionName} - ${c.nameKo} [${c.orientation}]:
 의미: ${meaning}
-질문 "${userQuestion}"과의 연결:`;
-    }).join('\n\n');
+현실적인 연결:`;
+      }).join('\n\n');
 
-    const userPrompt = `【중요】당신은 ONLY 이 카드들을 해석하세요. 다른 카드는 절대 말하지 마세요.
+      userPrompt = `운명의 여신 클로토(Clotho)여, 필멸자가 당신의 실타래 앞에 섰습니다. 오직 이 카드들만으로 운명의 조각을 일러주십시오.
 
-현재 뽑은 카드:
+현재의 실타래:
 ${cardList}
 
-【카드 정보 - 이것만 사용】
+【상세 정보】
 ${cardInfoDetail}
 
-【명령】
-1. 위의 ${cards.length}장 카드만 해석하세요
-2. 각 카드를 순서대로 해석하세요
-3. 다음 카드명들이 응답에 반드시 포함되어야 합니다:
-${requiredCardNames}
-4. 초반 인사말 없음
-5. 신비로운 표현 없음
+【절대 규칙】
+1. 각 카드를 ${positionNames.join(', ')}의 흐름에 따라 엄중히 해석하십시오.
+2. 미사여구를 걷어내고, 사용자가 바로 알아들을 수 있는 실질적인 단어들로 길을 제시하십시오.
+3. 불필요한 인사나 감정 표현을 배제하십시오.
+4. 카드 이름(한글명)을 반드시 명시하십시오.
 
 질문: "${userQuestion}"
 
 【해석】
 ${cardInterpretations}
 
-【종합 해석 - 정확히 4~5줄】
-이 ${cards.length}장의 카드가 함께 말하는 것:
+【여신의 총평 - 4~5줄】
+이 실타래가 가리키는 궁극적인 방향:
 
-【조언】
-지금 할 수 있는 구체적인 행동:`;
+【계시】
+지금 당장 실행해야 할 구체적 행동:`;
+    }
 
-    console.log(`  ✓ 프롬프트 길이: ${userPrompt.length} 자`);
-    console.log(`  ✓ 필수 카드명:`);
-    cards.forEach(c => {
-      console.log(`    - ${c.nameKo}(${c.name})`);
-    });
-    console.log(`  ✓ 프롬프트 샘플 (첫 500자):\n${userPrompt.substring(0, 500)}\n`);
-
-    console.log(`✅ [${requestId}] 8️⃣ Gemini API 호출`);
-
-    const systemInstruction = `당신은 타로 카드 해석 전문가입니다.
-
-【CRITICAL - 반드시 지켜야 합니다】
-- 반드시 주어진 카드들만 해석합니다
-- 다른 카드는 절대 언급하지 않습니다
-- 각 카드의 이름을 응답에 포함해야 합니다
-- 프롬프트의 카드 정보를 사용해서 해석합니다
-
-【금지】
-- 다른 카드 언급
-- 초반 긴 인사말
-- 신비로운 표현 (별빛, 우주, 영혼, 신비, 마법)
-- *(action)* 무대지문
-- "아, ", "보세요", "저의" 같은 추임새
-
-【필수】
-- 각 카드명 명시
-- 주어진 의미 사용
-- 구체적 조언
-- 직설적인 표현`;
+    const systemInstruction = `당신은 '클로토의 실타래(Clotho's Thread)' 서비스를 운영하는 운명의 여신 클로토입니다.
+- 말투는 무게감 있고 단호해야 합니다.
+- 필멸자(사용자)가 이해할 수 있는 지극히 현실적이고 구체적인 단어만을 선택하십시오.
+- 절대 코드나 JSON 형식을 대화 중에 노출하지 마십시오.`;
 
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash-lite',
+      model: 'gemini-1.5-flash-latest',
       systemInstruction: systemInstruction
     });
 
     const result = await model.generateContent(userPrompt);
     const aiResponse = result.response.text();
 
-    console.log(`  ✓ API 응답 받음 (${aiResponse.length} 자)`);
-    console.log(`  ✓ 응답 첫 300자:\n${aiResponse.substring(0, 300)}...\n`);
-
-    console.log(`🔍 [${requestId}] 응답에 카드명 포함 여부:`);
-    cards.forEach((c: MappedCard) => {
-      const hasKoName = aiResponse.includes(c.nameKo);
-      const hasEngName = aiResponse.includes(c.name);
-      const included = hasKoName || hasEngName;
-      console.log(`  ${c.position}. ${c.nameKo}(${c.name}): ${included ? '✓' : '✗'}`);
-      if (!included) {
-        console.error(`    ❌ ERROR: 이 카드가 응답에 없습니다!`);
-      }
-    });
-
-    console.log(`\n  ✅ 불필요한 표현 체크:`);
-    const badPatterns = [
-      '*(', '*)',
-      '별빛', '우주', '영혼', '신비', '마법',
-      '아, ', '보세요', '저의', '감돕니다',
-      '(잠시', '(신비', '깨달',
-      '당신의 앞에 앉으셨',
-      '보이지 않는 별들',
-      '간절한 마음'
-    ];
-
-    let foundBadPatterns: string[] = [];
-    badPatterns.forEach(pattern => {
-      if (aiResponse.includes(pattern)) {
-        foundBadPatterns.push(pattern);
-      }
-    });
-
-    if (foundBadPatterns.length > 0) {
-      console.warn(`  ⚠️ 불필요한 표현 발견: ${foundBadPatterns.join(', ')}`);
-    } else {
-      console.log(`  ✅ 불필요한 표현 없음`);
-    }
-    console.log();
-
-    console.log(`✅ [${requestId}] 9️⃣ 응답 페이로드 구성`);
-
-    const responsePayload = {
+    return NextResponse.json({
       text: aiResponse,
       cards: cards,
       timestamp: new Date().toISOString()
-    };
-
-    console.log(`  ✓ text: ${responsePayload.text.length} 자`);
-    console.log(`  ✓ cards: ${responsePayload.cards.length}개\n`);
-
-    console.log(`✅ [${requestId}] 🔟 JSON 응답 전송`);
-    console.log(`${'═'.repeat(80)}\n`);
-
-    return NextResponse.json(responsePayload, { headers: corsHeaders });
+    }, { headers: corsHeaders });
 
   } catch (error) {
-    console.error(`\n❌ [${requestId}] API 에러 발생`);
-    console.error(`${'═'.repeat(80)}`);
-    
-    if (error instanceof Error) {
-      console.error(`  에러 타입: ${error.constructor.name}`);
-      console.error(`  메시지: ${error.message}`);
-    } else {
-      console.error(`  에러:`, error);
-    }
-
-    console.error(`${'═'.repeat(80)}\n`);
-    
-    const errorMessage = error instanceof Error ? error.message : '타로 해석에 실패했습니다';
-    
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500, headers: corsHeaders }
-    );
+    console.error(`❌ 에러 발생:`, error);
+    return NextResponse.json({ error: '운명을 읽는 도중 실이 엉켰습니다.' }, { status: 500, headers: corsHeaders });
   }
 }
