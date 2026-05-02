@@ -137,15 +137,20 @@ export async function POST(req: NextRequest) {
 
     console.log(`✅ [${requestId}] 7️⃣ 프롬프트 생성 중`);
 
-    const cardList = cards.map((c: MappedCard) => `- Position ${c.position}: ${c.nameKo}(${c.name}) [${c.orientation}]`).join('\n');
+    const positionLabels: Record<number, string> = { 1: '과거', 2: '현재', 3: '미래' };
+    const orientationLabels: Record<string, string> = { 'upright': '정방향', 'reversed': '역방향' };
+
+    const cardList = cards.map((c: MappedCard) =>
+      `- ${positionLabels[c.position] || `Position ${c.position}`}: ${c.nameKo}(${c.name}) [${orientationLabels[c.orientation] || c.orientation}]`
+    ).join('\n');
 
     const cardInfoDetail = cards.map((c: MappedCard) => {
       const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
       return `
-Position ${c.position}: ${c.nameKo}(${c.name})
+${positionLabels[c.position] || `Position ${c.position}`}: ${c.nameKo}(${c.name})
 - 한글이름: ${c.nameKo}
 - 영문이름: ${c.name}
-- 방향: ${c.orientation}
+- 방향: ${orientationLabels[c.orientation] || c.orientation}
 - 의미: ${meaning}`;
     }).join('\n');
 
@@ -153,7 +158,7 @@ Position ${c.position}: ${c.nameKo}(${c.name})
 
     const cardInterpretations = cards.map((c: MappedCard) => {
       const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
-      return `Position ${c.position} - ${c.nameKo}(${c.name}):
+      return `${positionLabels[c.position] || `Position ${c.position}`} - ${c.nameKo}(${c.name}):
 의미: ${meaning}
 질문 "${userQuestion}"과의 연결:`;
     }).join('\n\n');
