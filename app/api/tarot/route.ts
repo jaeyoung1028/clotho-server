@@ -140,30 +140,57 @@ export async function POST(req: NextRequest) {
     const positionLabels: Record<number, string> = { 1: '과거', 2: '현재', 3: '미래' };
     const orientationLabels: Record<string, string> = { 'upright': '정방향', 'reversed': '역방향' };
 
-    const cardList = cards.map((c: MappedCard) =>
-      `- ${positionLabels[c.position] || `Position ${c.position}`}: ${c.nameKo}(${c.name}) [${orientationLabels[c.orientation] || c.orientation}]`
-    ).join('\n');
+    let userPrompt: string;
 
-    const cardInfoDetail = cards.map((c: MappedCard) => {
-      const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
-      return `
+    if (cards.length === 1) {
+      // 한 장 뽑기: YES/NO 판단
+      const card = cards[0];
+      const meaning = card.orientation === 'reversed' ? card.meaningRev : card.meaningUp;
+
+      userPrompt = `【중요】당신은 타로 카드 한 장으로 질문에 YES/NO 답변을 합니다. 다른 카드는 절대 말하지 마세요.
+
+뽑은 카드: ${card.nameKo}(${card.name}) [${orientationLabels[card.orientation] || card.orientation}]
+카드 의미: ${meaning}
+
+질문: "${userQuestion}"
+
+【답변 형식 - 반드시 이 순서대로】
+1. 첫 줄: ✅ YES 또는 ❌ NO 로 명확하게 시작 (둘 중 하나만 선택, 애매하게 하지 말 것)
+2. 둘째 단락: ${card.nameKo} 카드와 방향(${orientationLabels[card.orientation] || card.orientation})을 언급하며 판단 이유를 2~3문장으로 설명
+3. 셋째 단락: 지금 당장 할 수 있는 구체적인 행동 한 줄
+
+【금지】
+- 과거/현재/미래 언급 금지
+- 긴 서론이나 인사말 금지
+- "~일 수도 있습니다", "~가능성이 있습니다" 같은 애매한 표현 금지
+- 신비로운 표현 (별빛, 우주, 영혼, 신비, 마법) 금지`;
+
+    } else {
+      // 세 장 뽑기: 과거/현재/미래 해석
+      const cardList = cards.map((c: MappedCard) =>
+        `- ${positionLabels[c.position] || `Position ${c.position}`}: ${c.nameKo}(${c.name}) [${orientationLabels[c.orientation] || c.orientation}]`
+      ).join('\n');
+
+      const cardInfoDetail = cards.map((c: MappedCard) => {
+        const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
+        return `
 ${positionLabels[c.position] || `Position ${c.position}`}: ${c.nameKo}(${c.name})
 - 한글이름: ${c.nameKo}
 - 영문이름: ${c.name}
 - 방향: ${orientationLabels[c.orientation] || c.orientation}
 - 의미: ${meaning}`;
-    }).join('\n');
+      }).join('\n');
 
-    const requiredCardNames = cards.map((c: MappedCard) => `   - ${c.nameKo}(${c.name})`).join('\n');
+      const requiredCardNames = cards.map((c: MappedCard) => `   - ${c.nameKo}(${c.name})`).join('\n');
 
-    const cardInterpretations = cards.map((c: MappedCard) => {
-      const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
-      return `${positionLabels[c.position] || `Position ${c.position}`} - ${c.nameKo}(${c.name}):
+      const cardInterpretations = cards.map((c: MappedCard) => {
+        const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
+        return `${positionLabels[c.position] || `Position ${c.position}`} - ${c.nameKo}(${c.name}):
 의미: ${meaning}
 질문 "${userQuestion}"과의 연결:`;
-    }).join('\n\n');
+      }).join('\n\n');
 
-    const userPrompt = `【중요】당신은 ONLY 이 카드들을 해석하세요. 다른 카드는 절대 말하지 마세요.
+      userPrompt = `【중요】당신은 ONLY 이 카드들을 해석하세요. 다른 카드는 절대 말하지 마세요.
 
 현재 뽑은 카드:
 ${cardList}
@@ -189,6 +216,7 @@ ${cardInterpretations}
 
 【조언】
 지금 할 수 있는 구체적인 행동:`;
+    }
 
     console.log(`  ✓ 프롬프트 길이: ${userPrompt.length} 자`);
     console.log(`  ✓ 필수 카드명:`);
