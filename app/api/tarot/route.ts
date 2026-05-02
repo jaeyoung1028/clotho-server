@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
       const card = cards[0];
       const meaning = card.orientation === 'reversed' ? card.meaningRev : card.meaningUp;
 
-      userPrompt = `【중요】당신은 타로 카드 한 장으로 질문에 YES/NO 답변을 합니다. 다른 카드는 절대 말하지 마세요.
+      userPrompt = `【중요】당신은 타로 카드 한 장으로 질문에 명확하게 답변합니다. 다른 카드는 절대 말하지 마세요.
 
 뽑은 카드: ${card.nameKo}(${card.name}) [${orientationLabels[card.orientation] || card.orientation}]
 카드 의미: ${meaning}
@@ -155,7 +155,10 @@ export async function POST(req: NextRequest) {
 질문: "${userQuestion}"
 
 【답변 형식 - 반드시 이 순서대로】
-1. 첫 줄: ✅ YES 또는 ❌ NO 로 명확하게 시작 (둘 중 하나만 선택, 애매하게 하지 말 것)
+1. 첫 줄: 질문의 맥락에 맞게 긍정 또는 부정을 한국어로 명확하게 한 줄로 답변
+   - 긍정 예시: "좋습니다", "충분히 가능합니다", "기회가 있습니다", "잘 될 것입니다"
+   - 부정 예시: "쉽지 않을 것 같습니다", "지금은 힘들 것 같습니다", "조심이 필요합니다"
+   - 반드시 질문 내용에 맞는 표현을 사용할 것. 영어(YES/NO) 사용 금지.
 2. 둘째 단락: ${card.nameKo} 카드와 방향(${orientationLabels[card.orientation] || card.orientation})을 언급하며 판단 이유를 2~3문장으로 설명
 3. 셋째 단락: 지금 당장 할 수 있는 구체적인 행동 한 줄
 
@@ -163,7 +166,8 @@ export async function POST(req: NextRequest) {
 - 과거/현재/미래 언급 금지
 - 긴 서론이나 인사말 금지
 - "~일 수도 있습니다", "~가능성이 있습니다" 같은 애매한 표현 금지
-- 신비로운 표현 (별빛, 우주, 영혼, 신비, 마법) 금지`;
+- 신비로운 표현 (별빛, 우주, 영혼, 신비, 마법) 금지
+- YES / NO 영어 표현 금지`;
 
     } else {
       // 세 장 뽑기: 과거/현재/미래 해석
