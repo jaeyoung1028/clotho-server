@@ -1,11 +1,11 @@
 // clotho-server/app/api/tarot/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { google } from '@ai-sdk/google';
+import { generateText } from 'ai';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': 'https://clothos-thread.vercel.app',
@@ -252,13 +252,11 @@ ${cardInterpretations}
 - 구체적 조언
 - 직설적인 표현`;
 
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash-latest',
-      systemInstruction: systemInstruction
+    const { text: aiResponse } = await generateText({
+      model: google('gemini-2.0-flash'),
+      system: systemInstruction,
+      prompt: userPrompt,
     });
-
-    const result = await model.generateContent(userPrompt);
-    const aiResponse = result.response.text();
 
     console.log(`  ✓ API 응답 받음 (${aiResponse.length} 자)`);
     console.log(`  ✓ 응답 첫 300자:\n${aiResponse.substring(0, 300)}...\n`);
