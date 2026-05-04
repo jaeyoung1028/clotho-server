@@ -55,6 +55,70 @@ interface MappedCard {
   meaningRev: string;
 }
 
+// ==========================================
+// 📊 토큰 사용량 추정 유틸리티
+// ==========================================
+function estimateTokens(text: string): number {
+  // 한글 ~2자/토큰, 영문 ~4자/토큰 기준 추정
+  const koreanChars = (text.match(/[\uAC00-\uD7A3]/g) || []).length;
+  const otherChars = text.length - koreanChars;
+  return Math.ceil(koreanChars / 2 + otherChars / 4);
+}
+
+function logTokenUsage(
+  requestId: number,
+  systemPrompt: string,
+  historyMessages: { role: string; parts: { text: string }[] }[],
+  userPrompt: string,
+  aiResponse: string,
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number }
+) {
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log(`📊 [${requestId}] 토큰 사용량 분석`);
+  console.log(`${'─'.repeat(60)}`);
+
+  if (usageMetadata?.totalTokenCount) {
+    // Gemini SDK에서 실제 토큰 수 제공 시
+    console.log(`  ✅ 실제 토큰 수 (Gemini 제공):`);
+    console.log(`     입력 토큰:  ${usageMetadata.promptTokenCount?.toLocaleString() ?? 'N/A'}`);
+    console.log(`     출력 토큰:  ${usageMetadata.candidatesTokenCount?.toLocaleString() ?? 'N/A'}`);
+    console.log(`     총 토큰:    ${usageMetadata.totalTokenCount?.toLocaleString() ?? 'N/A'}`);
+  } else {
+    // 추정치
+    const systemTokens = estimateTokens(systemPrompt);
+    const historyTokens = historyMessages.reduce((sum, msg) => {
+      return sum + estimateTokens(msg.parts.map(p => p.text).join(''));
+    }, 0);
+    const userTokens = estimateTokens(userPrompt);
+    const outputTokens = estimateTokens(aiResponse);
+    const totalInputTokens = systemTokens + historyTokens + userTokens;
+    const totalTokens = totalInputTokens + outputTokens;
+
+    console.log(`  ⚠️  추정 토큰 수 (실제와 다를 수 있음):`);
+    console.log(`     시스템 프롬프트: ~${systemTokens.toLocaleString()} 토큰`);
+    console.log(`     대화 히스토리:   ~${historyTokens.toLocaleString()} 토큰 (${historyMessages.length}개 메시지)`);
+    console.log(`     사용자 프롬프트: ~${userTokens.toLocaleString()} 토큰`);
+    console.log(`     ─────────────────────────────`);
+    console.log(`     총 입력 토큰:    ~${totalInputTokens.toLocaleString()} 토큰`);
+    console.log(`     출력 토큰:       ~${outputTokens.toLocaleString()} 토큰`);
+    console.log(`     총 토큰:         ~${totalTokens.toLocaleString()} 토큰`);
+
+    // Gemini 2.5 Flash 기준 비용 추정 (참고용)
+    // 입력: $0.075 / 1M tokens, 출력: $0.30 / 1M tokens
+    const inputCostUSD = (totalInputTokens / 1_000_000) * 0.075;
+    const outputCostUSD = (outputTokens / 1_000_000) * 0.30;
+    const totalCostUSD = inputCostUSD + outputCostUSD;
+    const totalCostKRW = totalCostUSD * 1350;
+
+    console.log(`\n  💰 예상 비용 (Gemini 2.5 Flash 기준, 참고용):`);
+    console.log(`     입력 비용:  $${inputCostUSD.toFixed(6)} (~₩${(inputCostUSD * 1350).toFixed(2)})`);
+    console.log(`     출력 비용:  $${outputCostUSD.toFixed(6)} (~₩${(outputCostUSD * 1350).toFixed(2)})`);
+    console.log(`     총 비용:    $${totalCostUSD.toFixed(6)} (~₩${totalCostKRW.toFixed(2)})`);
+  }
+
+  console.log(`${'─'.repeat(60)}\n`);
+}
+
 export async function POST(req: NextRequest) {
   const requestId = Date.now();
 
@@ -75,6 +139,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '메시지가 필요합니다' }, { status: 400, headers: corsHeaders });
     }
     console.log(`  ✓ messages 존재: ${messages.length}개\n`);
+
+    // ==========================================
+    // ✅ 후속 질문 여부 판단
+    // messages가 2개 이상 = 최초 해석 후 추가 질문
+    // ==========================================
+    const isFollowUp = messages.length >= 2;
+    console.log(`  ✓ 후속 질문 여부: ${isFollowUp ? '✅ 후속 질문' : '🆕 최초 질문'}`);
+    console.log(`  ✓ messages 내역:`);
+    messages.forEach((m: Message, i: number) => {
+      console.log(`    [${i}] ${m.role}: "${m.content.substring(0, 80)}${m.content.length > 80 ? '...' : ''}"`);
+    });
+    console.log();
 
     console.log(`✅ [${requestId}] 3️⃣ 사용자 질문 추출`);
     const lastUserMessage = messages[messages.length - 1] as Message;
@@ -142,7 +218,32 @@ export async function POST(req: NextRequest) {
 
     let userPrompt: string;
 
-    if (cards.length === 1) {
+    if (isFollowUp) {
+      // ==========================================
+      // ✅ 후속 질문 프롬프트: 카드 컨텍스트 + 추가 질문
+      // ==========================================
+      const cardSummary = cards.map((c: MappedCard) => {
+        const meaning = c.orientation === 'reversed' ? c.meaningRev : c.meaningUp;
+        const posLabel = positionLabels[c.position] || `Position ${c.position}`;
+        const oriLabel = orientationLabels[c.orientation] || c.orientation;
+        return `- ${posLabel}: ${c.nameKo}(${c.name}) [${oriLabel}] → ${meaning}`;
+      }).join('\n');
+
+      userPrompt = `【뽑은 타로 카드 - 이 카드들을 기반으로 답변하세요】
+${cardSummary}
+
+추가 질문: "${userQuestion}"
+
+【답변 지침】
+- 반드시 위 카드들과 연결지어 답변하세요
+- 카드명을 언급하며 근거를 설명하세요
+- 구체적이고 직접적으로 답변하세요
+- 신비로운 표현 (별빛, 우주, 영혼, 마법) 금지`;
+
+      console.log(`  ✓ 후속 질문 프롬프트 생성`);
+      console.log(`  ✓ 포함된 카드: ${cards.map((c: MappedCard) => c.nameKo).join(', ')}`);
+
+    } else if (cards.length === 1) {
       // 한 장 뽑기: YES/NO 판단
       const card = cards[0];
       const meaning = card.orientation === 'reversed' ? card.meaningRev : card.meaningUp;
@@ -257,11 +358,40 @@ ${cardInterpretations}
       systemInstruction: systemInstruction
     });
 
-    const result = await model.generateContent(userPrompt);
+    // ==========================================
+    // ✅ 대화 히스토리 구성 (후속 질문 시 이전 대화 포함)
+    // ==========================================
+    const geminiHistory = messages.slice(0, -1).map((msg: Message) => ({
+      role: msg.role === 'assistant' || msg.role === 'model' ? 'model' : 'user',
+      parts: [{ text: msg.content }]
+    }));
+
+    console.log(`  ✓ Gemini 히스토리 메시지 수: ${geminiHistory.length}개`);
+    if (geminiHistory.length > 0) {
+      console.log(`  ✓ 히스토리 미리보기:`);
+      geminiHistory.forEach((m: { role: string; parts: { text: string }[] }, i: number) => {
+        console.log(`    [${i}] ${m.role}: "${m.parts[0].text.substring(0, 60)}..."`);
+      });
+    }
+    console.log();
+
+    // ==========================================
+    // ✅ startChat으로 히스토리 포함 호출
+    // ==========================================
+    const chat = model.startChat({ history: geminiHistory });
+    const result = await chat.sendMessage(userPrompt);
     const aiResponse = result.response.text();
+
+    // usageMetadata 추출 (Gemini SDK 지원 시 실제값 사용)
+    const usageMetadata = (result.response as any).usageMetadata;
 
     console.log(`  ✓ API 응답 받음 (${aiResponse.length} 자)`);
     console.log(`  ✓ 응답 첫 300자:\n${aiResponse.substring(0, 300)}...\n`);
+
+    // ==========================================
+    // 📊 토큰 사용량 로깅
+    // ==========================================
+    logTokenUsage(requestId, systemInstruction, geminiHistory, userPrompt, aiResponse, usageMetadata);
 
     console.log(`🔍 [${requestId}] 응답에 카드명 포함 여부:`);
     cards.forEach((c: MappedCard) => {
