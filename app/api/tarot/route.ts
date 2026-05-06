@@ -78,13 +78,11 @@ function logTokenUsage(
   console.log(`${'─'.repeat(60)}`);
 
   if (usageMetadata?.totalTokenCount) {
-    // Gemini SDK에서 실제 토큰 수 제공 시
     console.log(`  ✅ 실제 토큰 수 (Gemini 제공):`);
     console.log(`     입력 토큰:  ${usageMetadata.promptTokenCount?.toLocaleString() ?? 'N/A'}`);
     console.log(`     출력 토큰:  ${usageMetadata.candidatesTokenCount?.toLocaleString() ?? 'N/A'}`);
     console.log(`     총 토큰:    ${usageMetadata.totalTokenCount?.toLocaleString() ?? 'N/A'}`);
   } else {
-    // 추정치
     const systemTokens = estimateTokens(systemPrompt);
     const historyTokens = historyMessages.reduce((sum, msg) => {
       return sum + estimateTokens(msg.parts.map(p => p.text).join(''));
@@ -103,8 +101,6 @@ function logTokenUsage(
     console.log(`     출력 토큰:       ~${outputTokens.toLocaleString()} 토큰`);
     console.log(`     총 토큰:         ~${totalTokens.toLocaleString()} 토큰`);
 
-    // Gemini 2.5 Flash 기준 비용 추정 (참고용)
-    // 입력: $0.075 / 1M tokens, 출력: $0.30 / 1M tokens
     const inputCostUSD = (totalInputTokens / 1_000_000) * 0.075;
     const outputCostUSD = (outputTokens / 1_000_000) * 0.30;
     const totalCostUSD = inputCostUSD + outputCostUSD;
@@ -244,7 +240,7 @@ ${cardSummary}
       console.log(`  ✓ 포함된 카드: ${cards.map((c: MappedCard) => c.nameKo).join(', ')}`);
 
     } else if (cards.length === 1) {
-      // 한 장 뽑기: YES/NO 판단
+      // ✅ 한 장 뽑기: YES/NO 판단
       const card = cards[0];
       const meaning = card.orientation === 'reversed' ? card.meaningRev : card.meaningUp;
 
@@ -256,10 +252,7 @@ ${cardSummary}
 질문: "${userQuestion}"
 
 【답변 형식 - 반드시 이 순서대로】
-1. 첫 줄: 질문의 맥락에 맞게 긍정 또는 부정을 한국어로 명확하게 한 줄로 답변
-   - 긍정 예시: "좋습니다", "충분히 가능합니다", "기회가 있습니다", "잘 될 것입니다"
-   - 부정 예시: "쉽지 않을 것 같습니다", "지금은 힘들 것 같습니다", "조심이 필요합니다"
-   - 반드시 질문 내용에 맞는 표현을 사용할 것. 영어(YES/NO) 사용 금지.
+1. 첫 줄: 반드시 "YES" 또는 "NO" 로만 작성
 2. 둘째 단락: ${card.nameKo} 카드와 방향(${orientationLabels[card.orientation] || card.orientation})을 언급하며 판단 이유를 2~3문장으로 설명
 3. 셋째 단락: 지금 당장 할 수 있는 구체적인 행동 한 줄
 
@@ -267,8 +260,7 @@ ${cardSummary}
 - 과거/현재/미래 언급 금지
 - 긴 서론이나 인사말 금지
 - "~일 수도 있습니다", "~가능성이 있습니다" 같은 애매한 표현 금지
-- 신비로운 표현 (별빛, 우주, 영혼, 신비, 마법) 금지
-- YES / NO 영어 표현 금지`;
+- 신비로운 표현 (별빛, 우주, 영혼, 신비, 마법) 금지`;
 
     } else {
       // 세 장 뽑기: 과거/현재/미래 해석
@@ -382,7 +374,6 @@ ${cardInterpretations}
     const result = await chat.sendMessage(userPrompt);
     const aiResponse = result.response.text();
 
-    // usageMetadata 추출 (Gemini SDK 지원 시 실제값 사용)
     const usageMetadata = (result.response as any).usageMetadata;
 
     console.log(`  ✓ API 응답 받음 (${aiResponse.length} 자)`);
